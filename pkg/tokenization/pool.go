@@ -239,3 +239,8 @@ func (pool *Pool) processTask(task Task) error {
 
 	return nil
 }
+
+func (pool *Pool) SetTokenizer(tokenizer Tokenizer, modelName string) {
+	pool.tokenizer = tokenizer
+	pool.modelName = modelName
+}
