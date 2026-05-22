@@ -23,7 +23,7 @@ func TestGetContentBlocks(t *testing.T) {
 		request               *fwksched.InferenceRequest
 		blockSizeTokens       int
 		multimodalCfg         *multiModalTokenEstimatorConfig
-		expectedContentBlocks []KVCacheBlock
+		expectedContentBlocks []HashBlock
 		expectErr             bool
 	}{
 		{
@@ -37,8 +37,8 @@ func TestGetContentBlocks(t *testing.T) {
 			},
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: []byte("aaaabbbb")},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: []byte("aaaabbbb")},
 			},
 			expectErr: false,
 		},
@@ -55,8 +55,8 @@ func TestGetContentBlocks(t *testing.T) {
 			},
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: []byte("userHello")},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: []byte("userHello")},
 			},
 			expectErr: false,
 		},
@@ -74,8 +74,8 @@ func TestGetContentBlocks(t *testing.T) {
 			},
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: []byte("userHelloassistantcici")},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: []byte("userHelloassistantcici")},
 			},
 			expectErr: false,
 		},
@@ -106,25 +106,25 @@ func TestGetContentBlocks(t *testing.T) {
 					},
 				},
 			},
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: append([]byte("user"), repeatBytes(imageHashBytes("https://example.com/image.jpg"), 15)...)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 9)},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("user"), repeatBytes(imageHashBytes("https://example.com/image.jpg"), 15)...)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes("https://example.com/image.jpg"), 9)},
 			},
 			expectErr: false,
 		},
@@ -159,8 +159,8 @@ func TestGetContentBlocks(t *testing.T) {
 					},
 				},
 			},
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: append([]byte("system\x00\x00"), repeatBytes(imageHashBytes("data:image/jpeg;base64,bm90IGFuIGltYWdl"), 10)...)},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("system\x00\x00"), repeatBytes(imageHashBytes("data:image/jpeg;base64,bm90IGFuIGltYWdl"), 10)...)},
 			},
 			expectErr: false,
 		},
@@ -191,8 +191,8 @@ func TestGetContentBlocks(t *testing.T) {
 					},
 				},
 			},
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 10)...)},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 10)...)},
 			},
 			expectErr: false,
 		},
@@ -227,11 +227,11 @@ func TestGetContentBlocks(t *testing.T) {
 					},
 				},
 			},
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 15)...)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p1), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p1), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p1), 9)},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 15)...)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p1), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p1), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p1), 9)},
 			},
 			expectErr: false,
 		},
@@ -268,15 +268,15 @@ func TestGetContentBlocks(t *testing.T) {
 					},
 				},
 			},
-			expectedContentBlocks: []KVCacheBlock{
-				{PseudoBytes: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 15)...)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p1), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p1), 16)},
-				{PseudoBytes: append(append(repeatBytes(imageHashBytes(base64Image180p1), 9), []byte("aaaaaa\x00\x00")...), repeatBytes(imageHashBytes(base64Image180p2), 5)...)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p2), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p2), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p2), 16)},
-				{PseudoBytes: repeatBytes(imageHashBytes(base64Image180p2), 3)},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("user"), repeatBytes(imageHashBytes(base64Image180p1), 15)...)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p1), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p1), 16)},
+				{PseudoTokens: append(append(repeatBytes(imageHashBytes(base64Image180p1), 9), []byte("aaaaaa\x00\x00")...), repeatBytes(imageHashBytes(base64Image180p2), 5)...)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p2), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p2), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p2), 16)},
+				{PseudoTokens: repeatBytes(imageHashBytes(base64Image180p2), 3)},
 			},
 			expectErr: false,
 		},
@@ -299,7 +299,7 @@ func TestGetContentBlocks(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				blocks := make([]KVCacheBlock, 0, len(tt.expectedContentBlocks))
+				blocks := make([]HashBlock, 0, len(tt.expectedContentBlocks))
 				for block := range seq {
 					blocks = append(blocks, block)
 				}
@@ -312,46 +312,46 @@ func TestGetContentBlocks(t *testing.T) {
 func TestKVCacheBlock_Hash(t *testing.T) {
 	tests := []struct {
 		name     string
-		blockA   KVCacheBlock
-		blockB   KVCacheBlock
+		blockA   HashBlock
+		blockB   HashBlock
 		shouldEq bool
 	}{
 		{
 			name: "Identical Blocks",
-			blockA: KVCacheBlock{
-				PseudoBytes: []byte("Hello"),
-				Tokens:      []uint32{1, 2},
+			blockA: HashBlock{
+				PseudoTokens: []byte("Hello"),
+				Tokens:       []uint32{1, 2},
 			},
-			blockB: KVCacheBlock{
-				PseudoBytes: []byte("Hello"),
-				Tokens:      []uint32{1, 2},
+			blockB: HashBlock{
+				PseudoTokens: []byte("Hello"),
+				Tokens:       []uint32{1, 2},
 			},
 			shouldEq: true,
 		},
 		{
 			name: "Different PseudoBytes Content",
-			blockA: KVCacheBlock{
-				PseudoBytes: []byte("Hello"),
+			blockA: HashBlock{
+				PseudoTokens: []byte("Hello"),
 			},
-			blockB: KVCacheBlock{
-				PseudoBytes: []byte("Hellp"),
+			blockB: HashBlock{
+				PseudoTokens: []byte("Hellp"),
 			},
 			shouldEq: false,
 		},
 		{
 			name: "Different Token IDs",
-			blockA: KVCacheBlock{
+			blockA: HashBlock{
 				Tokens: []uint32{1, 2},
 			},
-			blockB: KVCacheBlock{
+			blockB: HashBlock{
 				Tokens: []uint32{1, 3},
 			},
 			shouldEq: false,
 		},
 		{
 			name:     "Empty fields match",
-			blockA:   KVCacheBlock{},
-			blockB:   KVCacheBlock{},
+			blockA:   HashBlock{},
+			blockB:   HashBlock{},
 			shouldEq: true,
 		},
 	}
