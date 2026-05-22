@@ -36,7 +36,7 @@ func TestGetContentBlocks(t *testing.T) {
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: []string{"aaaa", "bbbb"}},
+				{PseudoBytes: []byte("aaaabbbb")},
 			},
 			expectErr: false,
 		},
@@ -54,7 +54,7 @@ func TestGetContentBlocks(t *testing.T) {
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: []string{"user", "Hell", "o"}},
+				{PseudoBytes: []byte("userHello")},
 			},
 			expectErr: false,
 		},
@@ -73,7 +73,7 @@ func TestGetContentBlocks(t *testing.T) {
 			blockSizeTokens: 16,
 			multimodalCfg:   nil,
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: []string{"user", "Hell", "o", "assi", "stan", "t", "cici"}},
+				{PseudoBytes: []byte("userHelloassistantcici")},
 			},
 			expectErr: false,
 		},
@@ -105,24 +105,24 @@ func TestGetContentBlocks(t *testing.T) {
 				},
 			},
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: append([]string{"user"}, repeat("ec9fcee4f9e3bf14", 15)...)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 16)},
-				{PseudoTokens: repeat("ec9fcee4f9e3bf14", 9)},
+				{PseudoBytes: append([]byte("user"), repeatBytes("ec9fcee4f9e3bf14", 15)...)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 16)},
+				{PseudoBytes: repeatBytes("ec9fcee4f9e3bf14", 9)},
 			},
 			expectErr: false,
 		},
@@ -158,7 +158,7 @@ func TestGetContentBlocks(t *testing.T) {
 				},
 			},
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: append([]string{"user"}, repeat("78e243a88df523d4", 10)...)},
+				{PseudoBytes: append([]byte("user"), repeatBytes("78e243a88df523d4", 10)...)},
 			},
 			expectErr: false,
 		},
@@ -190,7 +190,7 @@ func TestGetContentBlocks(t *testing.T) {
 				},
 			},
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: append([]string{"user"}, repeat("4a94ad0c81606c56", 10)...)},
+				{PseudoBytes: append([]byte("user"), repeatBytes("4a94ad0c81606c56", 10)...)},
 			},
 			expectErr: false,
 		},
@@ -226,10 +226,10 @@ func TestGetContentBlocks(t *testing.T) {
 				},
 			},
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: append([]string{"user"}, repeat("4a94ad0c81606c56", 15)...)},
-				{PseudoTokens: repeat("4a94ad0c81606c56", 16)},
-				{PseudoTokens: repeat("4a94ad0c81606c56", 16)},
-				{PseudoTokens: repeat("4a94ad0c81606c56", 9)},
+				{PseudoBytes: append([]byte("user"), repeatBytes("4a94ad0c81606c56", 15)...)},
+				{PseudoBytes: repeatBytes("4a94ad0c81606c56", 16)},
+				{PseudoBytes: repeatBytes("4a94ad0c81606c56", 16)},
+				{PseudoBytes: repeatBytes("4a94ad0c81606c56", 9)},
 			},
 			expectErr: false,
 		},
@@ -267,14 +267,14 @@ func TestGetContentBlocks(t *testing.T) {
 				},
 			},
 			expectedContentBlocks: []KVCacheBlock{
-				{PseudoTokens: append([]string{"user"}, repeat("4a94ad0c81606c56", 15)...)},
-				{PseudoTokens: repeat("4a94ad0c81606c56", 16)},
-				{PseudoTokens: repeat("4a94ad0c81606c56", 16)},
-				{PseudoTokens: append(append(repeat("4a94ad0c81606c56", 9), "aaaa", "aaa"), repeat("12989a57d904c624", 5)...)},
-				{PseudoTokens: repeat("12989a57d904c624", 16)},
-				{PseudoTokens: repeat("12989a57d904c624", 16)},
-				{PseudoTokens: repeat("12989a57d904c624", 16)},
-				{PseudoTokens: repeat("12989a57d904c624", 3)},
+				{PseudoBytes: append([]byte("user"), repeatBytes("4a94ad0c81606c56", 15)...)},
+				{PseudoBytes: repeatBytes("4a94ad0c81606c56", 16)},
+				{PseudoBytes: repeatBytes("4a94ad0c81606c56", 16)},
+				{PseudoBytes: append(append(repeatBytes("4a94ad0c81606c56", 9), []byte("aaaaaaa")...), repeatBytes("12989a57d904c624", 5)...)},
+				{PseudoBytes: repeatBytes("12989a57d904c624", 16)},
+				{PseudoBytes: repeatBytes("12989a57d904c624", 16)},
+				{PseudoBytes: repeatBytes("12989a57d904c624", 16)},
+				{PseudoBytes: repeatBytes("12989a57d904c624", 3)},
 			},
 			expectErr: false,
 		},
@@ -313,32 +313,22 @@ func TestKVCacheBlock_Hash(t *testing.T) {
 		{
 			name: "Identical Blocks",
 			blockA: KVCacheBlock{
-				PseudoTokens: []string{"Hell", "o"},
-				Tokens:       []uint32{1, 2},
+				PseudoBytes: []byte("Hello"),
+				Tokens:      []uint32{1, 2},
 			},
 			blockB: KVCacheBlock{
-				PseudoTokens: []string{"Hell", "o"},
-				Tokens:       []uint32{1, 2},
+				PseudoBytes: []byte("Hello"),
+				Tokens:      []uint32{1, 2},
 			},
 			shouldEq: true,
 		},
 		{
-			name: "Different PseudoTokens Content",
+			name: "Different PseudoBytes Content",
 			blockA: KVCacheBlock{
-				PseudoTokens: []string{"Hell", "o"},
+				PseudoBytes: []byte("Hello"),
 			},
 			blockB: KVCacheBlock{
-				PseudoTokens: []string{"Hell", "p"},
-			},
-			shouldEq: false,
-		},
-		{
-			name: "Different PseudoTokens Slicing (Preserves boundaries)",
-			blockA: KVCacheBlock{
-				PseudoTokens: []string{"ab", "cd"},
-			},
-			blockB: KVCacheBlock{
-				PseudoTokens: []string{"abc", "d"},
+				PseudoBytes: []byte("Hellp"),
 			},
 			shouldEq: false,
 		},
@@ -373,10 +363,11 @@ func TestKVCacheBlock_Hash(t *testing.T) {
 	}
 }
 
-func repeat(s string, count int) []string {
-	res := make([]string, count)
-	for i := range res {
-		res[i] = s
+func repeatBytes(s string, count int) []byte {
+	res := make([]byte, 0, len(s)*count)
+	b := []byte(s)
+	for i := 0; i < count; i++ {
+		res = append(res, b...)
 	}
 	return res
 }
