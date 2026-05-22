@@ -29,13 +29,12 @@ Cluster RBAC unique name
 Selector labels
 */}}
 {{- define "llm-d-router.selectorLabels" -}}
-{{- /* Check if endpointsServer exists AND if createInferencePool is false */ -}}
-{{- if and .Values.inferenceExtension.endpointsServer (not .Values.inferenceExtension.endpointsServer.createInferencePool) -}}
+{{- if eq .Values.inferenceExtension.inferencePool.create false -}}
 {{- /* LOGIC FOR STANDALONE EPP MODE */ -}}
-epp: {{ include "llm-d-router.name" . }}
+llm-d-router-standalone: {{ include "llm-d-router.name" . }}
 {{- else -}}
-{{- /* LOGIC FOR PARENT (INFERENCEPOOL) MODE */ -}}
-inferencepool: {{ include "llm-d-router.name" . }}
+{{- /* LOGIC FOR PARENT (LLM-D-ROUTER-GATEWAY) MODE */ -}}
+llm-d-router-gateway: {{ include "llm-d-router.name" . }}
 {{- end -}}
 {{- end -}}
 
@@ -43,10 +42,10 @@ inferencepool: {{ include "llm-d-router.name" . }}
 Mode labels
 */}}
 {{- define "llm-d-router.modeLabels" -}}
-{{- if and .Values.inferenceExtension.endpointsServer (not .Values.inferenceExtension.endpointsServer.createInferencePool) -}}
-llm-d.ai/igw-mode: standalone
+{{- if eq .Values.inferenceExtension.inferencePool.create false -}}
+llm-d.ai/igw-mode: llm-d-router-standalone
 {{- else -}}
-llm-d.ai/igw-mode: inferencepool
+llm-d.ai/igw-mode: llm-d-router-gateway
 {{- end -}}
 {{- end -}}
 
@@ -195,7 +194,11 @@ deterministic even when additional Service ports are configured.
 Return the standalone EPP model-server target ports.
 */}}
 {{- define "llm-d-router.standaloneEndpointTargetPorts" -}}
-{{- include "llm-d-router.normalizedPortList" (dict "path" ".Values.inferenceExtension.endpointsServer.targetPorts" "value" .Values.inferenceExtension.endpointsServer.targetPorts) -}}
+{{- $ports := list -}}
+{{- range .Values.inferenceExtension.modelServers.targetPorts -}}
+{{- $ports = append $ports (toString .number) -}}
+{{- end -}}
+{{- join "," $ports -}}
 {{- end -}}
 
 {{/*
@@ -215,7 +218,7 @@ Standalone uses proxy presets merged with explicit sidecar overrides.
 {{- define "llm-d-router.sidecar" -}}
 {{- $sidecar := deepCopy (.Values.inferenceExtension.sidecar | default dict) -}}
 {{- $resolved := $sidecar -}}
-{{- if eq .Chart.Name "standalone" -}}
+{{- if eq .Chart.Name "llm-d-router-standalone" -}}
   {{- $proxyType := include "llm-d-router.sidecarProxyType" . -}}
   {{- $presets := index $sidecar "presets" | default dict -}}
   {{- $preset := deepCopy ((index $presets $proxyType) | default dict) -}}
@@ -243,7 +246,7 @@ Return the rendered sidecar ConfigMap data.
 {{- $sidecar := include "llm-d-router.sidecar" . | fromYaml | default dict -}}
 {{- $configMap := index $sidecar "configMap" | default dict -}}
 {{- $data := deepCopy ((index $configMap "data") | default dict) -}}
-{{- if and (eq .Chart.Name "standalone") (eq (include "llm-d-router.sidecarProxyType" .) "agentgateway") -}}
+{{- if and (eq .Chart.Name "llm-d-router-standalone") (eq (include "llm-d-router.sidecarProxyType" .) "agentgateway") -}}
   {{- $generated := dict "config.yaml" (include "llm-d-router.sidecar.agentgatewayConfig" .) -}}
   {{- $data = mergeOverwrite $data $generated -}}
 {{- end -}}
@@ -255,22 +258,12 @@ Render labels from the standalone endpoint selector for the generated model Serv
 Only equality-based selectors are supported because Service selectors are a map.
 */}}
 {{- define "llm-d-router.agentgateway.modelServiceSelectorLabels" -}}
-{{- $selector := .Values.inferenceExtension.endpointsServer.endpointSelector | default "" -}}
-{{- if empty $selector -}}
-  {{- fail ".Values.inferenceExtension.endpointsServer.endpointSelector is required when creating an agentgateway model Service" -}}
-{{- end -}}
-{{- range $raw := splitList "," $selector }}
-  {{- $part := trim $raw -}}
-  {{- $kv := splitList "=" $part -}}
-  {{- if ne (len $kv) 2 -}}
-    {{- fail (printf ".Values.inferenceExtension.endpointsServer.endpointSelector must use comma-separated key=value labels when creating an agentgateway model Service, got %q" $selector) -}}
-  {{- end -}}
-  {{- $key := trim (index $kv 0) -}}
-  {{- $value := trim (index $kv 1) -}}
-  {{- if or (empty $key) (empty $value) -}}
-    {{- fail (printf ".Values.inferenceExtension.endpointsServer.endpointSelector must use non-empty key=value labels when creating an agentgateway model Service, got %q" $selector) -}}
-  {{- end -}}
+{{- if and .Values.inferenceExtension.modelServers .Values.inferenceExtension.modelServers.matchLabels -}}
+{{- range $key, $value := .Values.inferenceExtension.modelServers.matchLabels -}}
 {{- printf "%s: %s\n" ($key | quote) ($value | quote) -}}
+{{- end -}}
+{{- else -}}
+  {{- fail ".Values.modelServers.matchLabels is required when creating an agentgateway model Service" -}}
 {{- end -}}
 {{- end -}}
 
