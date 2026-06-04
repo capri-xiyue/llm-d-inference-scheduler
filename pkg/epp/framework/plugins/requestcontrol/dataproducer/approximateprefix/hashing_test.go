@@ -281,6 +281,52 @@ func TestGetContentBlocks(t *testing.T) {
 			expectErr: false,
 		},
 		{
+			name: "ChatCompletions_VideoURL_CustomConfig",
+			request: &fwksched.InferenceRequest{
+				Body: &fwkrh.InferenceRequestBody{
+					ChatCompletions: &fwkrh.ChatCompletionsRequest{
+						Messages: []fwkrh.Message{
+							{
+								Role: "user",
+								Content: fwkrh.Content{
+									Structured: []fwkrh.ContentBlock{
+										{Type: "video_url", VideoURL: fwkrh.VideoBlock{URL: "https://example.com/video.mp4?duration=2.0"}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			blockSizeTokens: 16,
+			multimodalCfg: &multiModalTokenEstimatorConfig{
+				Video: &videoTokenEstimatorConfig{
+					FrameCfg: videoFrameEstimatorConfig{
+						Mode: ModeDynamic,
+						DynamicCfg: &dynamicFrameEstimatorConfig{
+							FPS:                    1.0,
+							MinFrames:              1,
+							MaxFrames:              10,
+							MaxDurationSeconds:     10.0,
+							DefaultDurationSeconds: 5.0,
+						},
+					},
+					ImageCfg: &imageTokenEstimatorConfig{
+						Mode: ModeFixed,
+						FixedCfg: &fixedTokenEstimatorConfig{
+							FixedToken: 10,
+						},
+					},
+					PatchSize: 1,
+				},
+			},
+			expectedContentBlocks: []HashBlock{
+				{PseudoTokens: append([]byte("user"), repeatBytes(videoHashBytes("https://example.com/video.mp4?duration=2.0"), 15)...)},
+				{PseudoTokens: repeatBytes(videoHashBytes("https://example.com/video.mp4?duration=2.0"), 5)},
+			},
+			expectErr: false,
+		},
+		{
 			name: "Invalid_Body",
 			request: &fwksched.InferenceRequest{
 				Body: &fwkrh.InferenceRequestBody{},
@@ -378,6 +424,13 @@ func repeatBytes(b []byte, count int) []byte {
 }
 
 func imageHashBytes(url string) []byte {
+	h := xxhash.Sum64([]byte(url))
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, uint32(h))
+	return buf
+}
+
+func videoHashBytes(url string) []byte {
 	h := xxhash.Sum64([]byte(url))
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, uint32(h))

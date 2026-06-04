@@ -143,9 +143,62 @@ type imageTokenEstimatorConfig struct {
 	FixedCfg          *fixedTokenEstimatorConfig   `json:"fixed,omitempty"`
 }
 
+type fixedFrameEstimatorConfig struct {
+	FixedFrames int `json:"fixedFrames"`
+}
+
+type dynamicFrameEstimatorConfig struct {
+	FPS                    float64 `json:"fps"`
+	MinFrames              int     `json:"minFrames"`
+	MaxFrames              int     `json:"maxFrames"`
+	MaxDurationSeconds     float64 `json:"maxDurationSeconds"`
+	DefaultDurationSeconds float64 `json:"defaultDurationSeconds"`
+}
+
+// videoFrameEstimatorConfig defines configuration parameters for estimating frames in a video.
+type videoFrameEstimatorConfig struct {
+	Mode       mode                         `json:"mode"`
+	DynamicCfg *dynamicFrameEstimatorConfig `json:"dynamic,omitempty"`
+	FixedCfg   *fixedFrameEstimatorConfig   `json:"fixed,omitempty"`
+}
+
+// videoTokenEstimatorConfig defines the configuration for video modality.
+type videoTokenEstimatorConfig struct {
+	FrameCfg  videoFrameEstimatorConfig  `json:"frame"`
+	ImageCfg  *imageTokenEstimatorConfig `json:"image,omitempty"`
+	PatchSize int                        `json:"patchSize"`
+}
+
 // multiModalTokenEstimatorConfig defines the configuration for multimodal inputs.
 type multiModalTokenEstimatorConfig struct {
 	Image *imageTokenEstimatorConfig `json:"image,omitempty"`
+	Video *videoTokenEstimatorConfig `json:"video,omitempty"`
+}
+
+// defaultVideoConfig provides default configuration for video inputs.
+var defaultVideoConfig = videoTokenEstimatorConfig{
+	FrameCfg: videoFrameEstimatorConfig{
+		Mode: ModeDynamic,
+		DynamicCfg: &dynamicFrameEstimatorConfig{
+			FPS:                    2.0,
+			MinFrames:              4,
+			MaxFrames:              64,
+			MaxDurationSeconds:     0.0,
+			DefaultDurationSeconds: 10.0,
+		},
+	},
+	ImageCfg: &imageTokenEstimatorConfig{
+		Mode: ModeDynamic,
+		// Default is 360p resolution per frame
+		DefaultResolution: resolution{
+			Width:  640,
+			Height: 360,
+		},
+		DynamicCfg: &dynamicTokenEstimatorConfig{
+			Factor: 1024,
+		},
+	},
+	PatchSize: 1,
 }
 
 // defaultMultimodalConfig provides default configuration for multimodal inputs.
@@ -161,6 +214,7 @@ var defaultMultimodalConfig = multiModalTokenEstimatorConfig{
 			Factor: 1024,
 		},
 	},
+	Video: &defaultVideoConfig,
 }
 
 // config defines the configuration for the prefix cache plugins.

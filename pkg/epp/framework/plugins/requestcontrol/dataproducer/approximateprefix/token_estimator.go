@@ -23,6 +23,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"net/url"
+	"strconv"
 	"strings"
 
 	// needed for image dimension parse
@@ -60,8 +62,7 @@ func (e *approximatePrefixCacheTokenEstimator) Estimate(block fwkrh.ContentBlock
 	case "image_url":
 		return getImagePlaceholders(e.ctx, block.ImageURL.URL, e.multimodalConfig)
 	case "video_url":
-		// Add video support later
-		return 0
+		return getVideoPlaceholders(e.ctx, block.VideoURL.URL, e.multimodalConfig)
 	case "input_audio", "audio_url":
 		// Add audio support later
 		return 0
@@ -117,4 +118,94 @@ func getImageDimensionsFromBase64(url string) (*resolution, error) {
 		Width:  config.Width,
 		Height: config.Height,
 	}, nil
+}
+
+func getVideoPlaceholders(ctx context.Context, url string, multimodalConfig *multiModalTokenEstimatorConfig) int {
+	if multimodalConfig == nil || multimodalConfig.Video == nil {
+		multimodalConfig = &defaultMultimodalConfig
+	}
+	logger := log.FromContext(ctx).V(logutil.DEBUG)
+	videoCfg := multimodalConfig.Video
+	frameCfg := videoCfg.FrameCfg
+	var n int
+	switch frameCfg.Mode {
+	case ModeFixed:
+		if frameCfg.FixedCfg != nil {
+			n = frameCfg.FixedCfg.FixedFrames
+		}
+		logger.Info(fmt.Sprintf("using fixed frames for video: %d", n))
+	case ModeDynamic:
+		if frameCfg.DynamicCfg != nil {
+			dynCfg := frameCfg.DynamicCfg
+			duration := getVideoDurationFromURL(ctx, url, dynCfg.DefaultDurationSeconds)
+
+			// Formula: N = max(min_frames, min(floor(T_valid * fps), max_frames))
+			// where T_valid = min(T, T_max_duration) (if T_max_duration > 0)
+			tValid := duration
+			if dynCfg.MaxDurationSeconds > 0 && duration > dynCfg.MaxDurationSeconds {
+				tValid = dynCfg.MaxDurationSeconds
+			}
+
+			n = int(tValid * dynCfg.FPS)
+			if n < dynCfg.MinFrames {
+				n = dynCfg.MinFrames
+			}
+			if n > dynCfg.MaxFrames {
+				n = dynCfg.MaxFrames
+			}
+		}
+		logger.Info(fmt.Sprintf("using dynamic frames for video: %d", n))
+	}
+
+	var tokensPerFrame int
+	imgCfg := videoCfg.ImageCfg
+	if imgCfg == nil {
+		imgCfg = defaultMultimodalConfig.Image
+	}
+	if imgCfg != nil {
+		switch imgCfg.Mode {
+		case ModeFixed:
+			if imgCfg.FixedCfg != nil {
+				tokensPerFrame = imgCfg.FixedCfg.FixedToken
+			}
+			logger.Info("using fixed tokens per frame for video")
+		case ModeDynamic:
+			if imgCfg.DynamicCfg != nil && imgCfg.DynamicCfg.Factor > 0 {
+				tokensPerFrame = imgCfg.DefaultResolution.Width * imgCfg.DefaultResolution.Height / imgCfg.DynamicCfg.Factor
+			}
+			logger.Info(fmt.Sprintf("using dynamic tokens per frame for video resolution width %d height %d", imgCfg.DefaultResolution.Width, imgCfg.DefaultResolution.Height))
+		}
+	}
+
+	patchSize := videoCfg.PatchSize
+	if patchSize <= 0 {
+		patchSize = 1
+	}
+
+	numPlaceholders := (n * tokensPerFrame) / patchSize
+	logger.Info(fmt.Sprintf("calculated video placeholders: frames=%d, tokensPerFrame=%d, patchSize=%d, total=%d", n, tokensPerFrame, patchSize, numPlaceholders))
+	return numPlaceholders
+}
+
+func getVideoDurationFromURL(ctx context.Context, urlStr string, defaultSecs float64) float64 {
+	logger := log.FromContext(ctx).V(logutil.DEBUG)
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		logger.Error(err, "failed to parse video URL, using default duration")
+		return defaultSecs
+	}
+	q := u.Query()
+	if durationStr := q.Get("duration"); durationStr != "" {
+		d, err := strconv.ParseFloat(durationStr, 64)
+		if err != nil {
+			logger.Error(err, "failed to parse video duration from query param, using default duration", "duration", durationStr)
+			return defaultSecs
+		}
+		if d <= 0 {
+			logger.Info("video duration from query param is non-positive, using default duration", "duration", d)
+			return defaultSecs
+		}
+		return d
+	}
+	return defaultSecs
 }
