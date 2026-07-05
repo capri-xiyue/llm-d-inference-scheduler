@@ -63,6 +63,27 @@ the defaults below):
 | `estimate.image.dynamic.factor`    | `1024`    | Dynamic-mode pixels-per-placeholder-token divisor.                         |
 | `estimate.image.static.staticToken`| –         | Static-mode per-image placeholder count.                                   |
 
+Video estimation is `min(frames × tokensPerFrame, maxVideoTokens)`. The per-frame
+token count and the frame count are configured independently, so the two common
+model shapes are mode combinations: qwen3 is `tokensPerFrame.mode=dynamic` +
+`frames.mode=sampled`; gemma4 is `tokensPerFrame.mode=static` +
+`frames.mode=strided`. Video duration and resolution are not decoded from the
+request; they come from the config below.
+
+| Parameter                             | Default   | Description                                                                     |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `estimate.video.tokensPerFrame.mode`  | `dynamic` | `dynamic` (width×height/factor) or `static` (a constant per-frame count).       |
+| `estimate.video.tokensPerFrame.factor`| `1024`    | Dynamic-mode pixels-per-placeholder-token divisor.                              |
+| `estimate.video.tokensPerFrame.staticToken` | –   | Static-mode per-frame placeholder count.                                        |
+| `estimate.video.frames.mode`          | `sampled` | `sampled` (duration×sampleFPS) or `strided` (min(duration×sourceFPS/frameStride, maxFrames)). |
+| `estimate.video.frames.sampleFPS`     | `1`       | Sampled-mode sampling rate.                                                      |
+| `estimate.video.frames.sourceFPS`     | `24`      | Strided-mode source frame rate.                                                 |
+| `estimate.video.frames.frameStride`   | `1`       | Strided-mode divisor: keep every Nth source frame.                              |
+| `estimate.video.frames.maxFrames`     | –         | Strided-mode frame cap (0 = uncapped).                                          |
+| `estimate.video.defaultResolution`    | 640×360   | Per-frame resolution used for dynamic tokens-per-frame.                         |
+| `estimate.video.defaultDuration`      | `10`      | Video length in seconds used for frame counting.                                |
+| `estimate.video.maxVideoTokens`       | –         | Overall placeholder cap for a video (0 = uncapped).                            |
+
 ## Failure mode
 
 Per-request errors are returned to the Director, which currently logs and

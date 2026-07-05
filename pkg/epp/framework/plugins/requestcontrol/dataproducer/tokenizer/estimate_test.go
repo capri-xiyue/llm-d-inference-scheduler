@@ -218,6 +218,116 @@ func TestImageEstimator_CustomDefaultResolution(t *testing.T) {
 	assert.Equal(t, (1024*1024)/imageTokenFactor, tp.MultiModalFeatures[0].Length, "custom default-resolution length")
 }
 
+// chatVideoBody builds a chat request carrying a single video_url block.
+func chatVideoBody(url string) *fwkrh.InferenceRequestBody {
+	return &fwkrh.InferenceRequestBody{ChatCompletions: &fwkrh.ChatCompletionsRequest{
+		Messages: []fwkrh.Message{{Role: "user", Content: fwkrh.Content{Structured: []fwkrh.ContentBlock{
+			{Type: "video_url", VideoURL: fwkrh.VideoBlock{URL: url}},
+		}}}},
+	}}
+}
+
+// TestVideoEstimator_Default asserts the zero-config estimator uses sampled
+// frames (duration*sampleFPS) and dynamic tokens-per-frame (w*h/factor).
+func TestVideoEstimator_Default(t *testing.T) {
+	tp, err := estimateBackend{}.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	require.Len(t, tp.MultiModalFeatures, 1)
+	frames := defaultVideoDuration * defaultVideoSampleFPS
+	tpf := (defaultVideoWidth * defaultVideoHeight) / videoTokenFactor
+	assert.Equal(t, frames*tpf, tp.MultiModalFeatures[0].Length, "default video length")
+}
+
+// TestVideoEstimator_StaticTokensPerFrame asserts static mode emits a constant
+// per-frame count.
+func TestVideoEstimator_StaticTokensPerFrame(t *testing.T) {
+	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		TokensPerFrame: &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 100},
+	}})}
+	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	frames := defaultVideoDuration * defaultVideoSampleFPS
+	assert.Equal(t, frames*100, tp.MultiModalFeatures[0].Length, "static tokens-per-frame video length")
+}
+
+// TestVideoEstimator_DynamicFactor asserts the dynamic factor knob changes the
+// per-frame count for the default resolution.
+func TestVideoEstimator_DynamicFactor(t *testing.T) {
+	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		TokensPerFrame: &tokensPerFrameConfig{Mode: videoTPFModeDynamic, Factor: 2048},
+	}})}
+	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	frames := defaultVideoDuration * defaultVideoSampleFPS
+	tpf := (defaultVideoWidth * defaultVideoHeight) / 2048
+	assert.Equal(t, frames*tpf, tp.MultiModalFeatures[0].Length, "custom-factor video length")
+}
+
+// TestVideoEstimator_SampledFrames asserts sampled frames scale with sampleFPS
+// and defaultDuration.
+func TestVideoEstimator_SampledFrames(t *testing.T) {
+	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		DefaultDuration: 8,
+		Frames:          &framesConfig{Mode: videoFramesModeSampled, SampleFPS: 2},
+		TokensPerFrame:  &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 10},
+	}})}
+	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	assert.Equal(t, 8*2*10, tp.MultiModalFeatures[0].Length, "sampled-frames video length")
+}
+
+// TestVideoEstimator_StridedFramesCapped asserts strided frames apply the
+// stride divisor and the maxFrames cap.
+func TestVideoEstimator_StridedFramesCapped(t *testing.T) {
+	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		DefaultDuration: 10,
+		Frames:          &framesConfig{Mode: videoFramesModeStrided, SourceFPS: 24, FrameStride: 4, MaxFrames: 16},
+		TokensPerFrame:  &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 100},
+	}})}
+	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	// duration*sourceFPS/stride = 10*24/4 = 60, capped to 16; 16*100 tokens.
+	assert.Equal(t, 16*100, tp.MultiModalFeatures[0].Length, "strided-frames video length")
+}
+
+// TestVideoEstimator_MaxVideoTokens asserts the overall cap bounds the total
+// placeholder count.
+func TestVideoEstimator_MaxVideoTokens(t *testing.T) {
+	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		MaxVideoTokens: 500,
+	}})}
+	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	// Default frames*tpf = 10*225 = 2250, capped to 500.
+	assert.Equal(t, 500, tp.MultiModalFeatures[0].Length, "max-video-tokens cap")
+}
+
+// TestVideoEstimator_Qwen3AndGemma4 asserts the two documented model shapes
+// compute the expected placeholder counts.
+func TestVideoEstimator_Qwen3AndGemma4(t *testing.T) {
+	qwen3 := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		DefaultResolution: &resolution{Width: 640, Height: 480},
+		DefaultDuration:   10,
+		TokensPerFrame:    &tokensPerFrameConfig{Mode: videoTPFModeDynamic, Factor: 1024},
+		Frames:            &framesConfig{Mode: videoFramesModeSampled, SampleFPS: 2},
+		MaxVideoTokens:    100000,
+	}})}
+	tp, err := qwen3.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	// frames = 10*2 = 20, tpf = 640*480/1024 = 300, tokens = 6000.
+	assert.Equal(t, 20*((640*480)/1024), tp.MultiModalFeatures[0].Length, "qwen3-shaped video length")
+
+	gemma4 := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
+		DefaultDuration: 10,
+		TokensPerFrame:  &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 256},
+		Frames:          &framesConfig{Mode: videoFramesModeStrided, SourceFPS: 24, FrameStride: 4, MaxFrames: 16},
+	}})}
+	tp, err = gemma4.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
+	require.NoError(t, err)
+	// frames = min(10*24/4, 16) = 16, tokens = 16*256.
+	assert.Equal(t, 16*256, tp.MultiModalFeatures[0].Length, "gemma4-shaped video length")
+}
+
 // TestEstimateBackend_MessagesImageFeature asserts an Anthropic messages image
 // emits a multimodal feature with image modality, a content-derived hash, and
 // span inside the token stream. The base64 source must hash by its raw payload.

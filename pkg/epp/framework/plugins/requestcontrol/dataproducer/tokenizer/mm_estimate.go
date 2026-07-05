@@ -41,6 +41,24 @@ const (
 	defaultImageHeight = 360
 	// imageTokenFactor maps image pixels to placeholder tokens (width*height/factor).
 	imageTokenFactor = 1024
+
+	// Video tokens-per-frame modes.
+	videoTPFModeDynamic = "dynamic"
+	videoTPFModeStatic  = "static"
+	// Video frame-count modes.
+	videoFramesModeSampled = "sampled"
+	videoFramesModeStrided = "strided"
+
+	// Video estimation defaults, applied when a video is not configured. A video
+	// cannot be decoded (no stdlib video decoder), so duration and resolution
+	// always come from configuration or these fallbacks.
+	defaultVideoWidth     = 640
+	defaultVideoHeight    = 360
+	defaultVideoDuration  = 10 // seconds
+	defaultVideoSampleFPS = 1  // sampled frames: duration*sampleFPS
+	defaultVideoSourceFPS = 24 // strided frames: duration*sourceFPS/frameStride
+	// videoTokenFactor maps a frame's pixels to placeholder tokens (width*height/factor).
+	videoTokenFactor = 1024
 )
 
 // imageEstimator estimates an image's placeholder-token count from configured or
@@ -147,4 +165,124 @@ func imageDimensionsFromBase64Payload(rawB64 string) (width, height int, ok bool
 		return 0, 0, false
 	}
 	return cfg.Width, cfg.Height, true
+}
+
+// videoEstimator estimates a video's placeholder-token count as
+// min(frames * tokensPerFrame, maxVideoTokens). Frame count and per-frame token
+// count are configured independently: qwen3 is sampled frames + dynamic
+// tokens-per-frame, gemma4 is strided frames + static tokens-per-frame. The zero
+// value is valid and uses all built-in defaults.
+type videoEstimator struct {
+	tpfMode     string
+	factor      int
+	staticToken int
+
+	framesMode  string
+	sampleFPS   float64
+	sourceFPS   float64
+	frameStride int
+	maxFrames   int
+
+	defWidth       int
+	defHeight      int
+	defDuration    float64
+	maxVideoTokens int
+}
+
+// newVideoEstimator resolves an estimateConfig into a videoEstimator, leaving
+// unset fields zero so placeholderCount applies built-in defaults.
+func newVideoEstimator(cfg *estimateConfig) videoEstimator {
+	if cfg == nil || cfg.Video == nil {
+		return videoEstimator{}
+	}
+	vid := cfg.Video
+	est := videoEstimator{
+		defDuration:    vid.DefaultDuration,
+		maxVideoTokens: vid.MaxVideoTokens,
+	}
+	if vid.DefaultResolution != nil {
+		est.defWidth, est.defHeight = vid.DefaultResolution.Width, vid.DefaultResolution.Height
+	}
+	if vid.TokensPerFrame != nil {
+		est.tpfMode = vid.TokensPerFrame.Mode
+		est.factor = vid.TokensPerFrame.Factor
+		est.staticToken = vid.TokensPerFrame.StaticToken
+	}
+	if vid.Frames != nil {
+		est.framesMode = vid.Frames.Mode
+		est.sampleFPS = vid.Frames.SampleFPS
+		est.sourceFPS = vid.Frames.SourceFPS
+		est.frameStride = vid.Frames.FrameStride
+		est.maxFrames = vid.Frames.MaxFrames
+	}
+	return est
+}
+
+// placeholderCount estimates placeholder tokens for a video URL. Duration and
+// resolution are not decoded; the url parameter matches the image estimator's
+// signature. Always >= 1 so every video carries weight.
+func (e videoEstimator) placeholderCount(_ string) int {
+	tokens := e.frameCount() * e.tokensPerFrame()
+	if e.maxVideoTokens > 0 && tokens > e.maxVideoTokens {
+		tokens = e.maxVideoTokens
+	}
+	if tokens < 1 {
+		return 1
+	}
+	return tokens
+}
+
+// frameCount returns the number of sampled frames. Sampled mode takes
+// duration*sampleFPS; strided mode takes min(duration*sourceFPS/frameStride, maxFrames).
+func (e videoEstimator) frameCount() int {
+	duration := e.defDuration
+	if duration <= 0 {
+		duration = defaultVideoDuration
+	}
+	if e.framesMode == videoFramesModeStrided {
+		fps := e.sourceFPS
+		if fps <= 0 {
+			fps = defaultVideoSourceFPS
+		}
+		stride := e.frameStride
+		if stride < 1 {
+			stride = 1
+		}
+		n := int(duration*fps) / stride
+		if e.maxFrames > 0 && n > e.maxFrames {
+			n = e.maxFrames
+		}
+		return n
+	}
+	fps := e.sampleFPS
+	if fps <= 0 {
+		fps = defaultVideoSampleFPS
+	}
+	return int(duration * fps)
+}
+
+// tokensPerFrame returns the per-frame placeholder count: a fixed constant in
+// static mode, or width*height/factor in dynamic mode. Always >= 1.
+func (e videoEstimator) tokensPerFrame() int {
+	if e.tpfMode == videoTPFModeStatic {
+		if e.staticToken > 0 {
+			return e.staticToken
+		}
+		return 1
+	}
+	w, h := e.defWidth, e.defHeight
+	if w <= 0 {
+		w = defaultVideoWidth
+	}
+	if h <= 0 {
+		h = defaultVideoHeight
+	}
+	factor := e.factor
+	if factor <= 0 {
+		factor = videoTokenFactor
+	}
+	if n := (w * h) / factor; n > 0 {
+		return n
+	}
+	return 1
 }
