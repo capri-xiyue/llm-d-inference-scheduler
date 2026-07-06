@@ -49,13 +49,14 @@ const (
 	videoFramesModeSampled = "sampled"
 	videoFramesModeStrided = "strided"
 
-	// Video estimation defaults, applied when a video is not configured. A video
-	// cannot be decoded (no stdlib video decoder), so duration and resolution
-	// always come from configuration or these fallbacks.
+	// Video estimation defaults, applied when a property is absent from both the
+	// request headers and the config. Duration, resolution, and source FPS come
+	// from the x-llm-d-video- request headers when provided; otherwise they fall
+	// back to configuration and then these values.
 	defaultVideoWidth     = 640
 	defaultVideoHeight    = 360
 	defaultVideoDuration  = 10 // seconds
-	defaultVideoSampleFPS = 1  // sampled frames: duration*sampleFPS
+	defaultVideoSampleFPS = 2  // sampled frames: duration*sampleFPS
 	defaultVideoSourceFPS = 24 // strided frames: duration*sourceFPS/frameStride
 	// videoTokenFactor maps a frame's pixels to placeholder tokens (width*height/factor).
 	videoTokenFactor = 1024
@@ -167,11 +168,30 @@ func imageDimensionsFromBase64Payload(rawB64 string) (width, height int, ok bool
 	return cfg.Width, cfg.Height, true
 }
 
+// mmMetadata carries per-request multimodal properties parsed from the
+// x-llm-d-* request headers. Only video is populated today; image and audio
+// fields follow the same pattern when their headers are added.
+type mmMetadata struct {
+	video videoMetadata
+}
+
+// videoMetadata carries per-request video properties parsed from the
+// x-llm-d-video- request headers (metadata.VideoFPSHeaderKey and siblings). A
+// zero field means "not provided"; the estimator falls back per field to
+// configuration and then built-in defaults.
+type videoMetadata struct {
+	width, height int
+	duration      float64 // seconds
+	fps           float64 // source frames per second
+}
+
 // videoEstimator estimates a video's placeholder-token count as
 // min(frames * tokensPerFrame, maxVideoTokens). Frame count and per-frame token
 // count are configured independently: qwen3 is sampled frames + dynamic
-// tokens-per-frame, gemma4 is strided frames + static tokens-per-frame. The zero
-// value is valid and uses all built-in defaults.
+// tokens-per-frame, gemma4 is strided frames + static tokens-per-frame. Duration,
+// resolution, and source FPS come from the request's videoMetadata when provided
+// and take precedence over configuration; the config fields are fallbacks. The
+// zero value is valid and uses all built-in defaults.
 type videoEstimator struct {
 	tpfMode     string
 	factor      int
@@ -218,11 +238,10 @@ func newVideoEstimator(cfg *estimateConfig) videoEstimator {
 	return est
 }
 
-// placeholderCount estimates placeholder tokens for a video URL. Duration and
-// resolution are not decoded; the url parameter matches the image estimator's
-// signature. Always >= 1 so every video carries weight.
-func (e videoEstimator) placeholderCount(_ string) int {
-	tokens := e.frameCount() * e.tokensPerFrame()
+// placeholderCount estimates placeholder tokens for a video from its request
+// metadata. Always >= 1 so every video carries weight.
+func (e videoEstimator) placeholderCount(meta videoMetadata) int {
+	tokens := e.frameCount(meta) * e.tokensPerFrame(meta)
 	if e.maxVideoTokens > 0 && tokens > e.maxVideoTokens {
 		tokens = e.maxVideoTokens
 	}
@@ -234,13 +253,21 @@ func (e videoEstimator) placeholderCount(_ string) int {
 
 // frameCount returns the number of sampled frames. Sampled mode takes
 // duration*sampleFPS; strided mode takes min(duration*sourceFPS/frameStride, maxFrames).
-func (e videoEstimator) frameCount() int {
-	duration := e.defDuration
+// A header-provided duration and source FPS take precedence over configuration.
+// sampleFPS is a model sampling rate, not a source property, so it is never overridden.
+func (e videoEstimator) frameCount(meta videoMetadata) int {
+	duration := meta.duration
+	if duration <= 0 {
+		duration = e.defDuration
+	}
 	if duration <= 0 {
 		duration = defaultVideoDuration
 	}
 	if e.framesMode == videoFramesModeStrided {
-		fps := e.sourceFPS
+		fps := meta.fps
+		if fps <= 0 {
+			fps = e.sourceFPS
+		}
 		if fps <= 0 {
 			fps = defaultVideoSourceFPS
 		}
@@ -262,8 +289,9 @@ func (e videoEstimator) frameCount() int {
 }
 
 // tokensPerFrame returns the per-frame placeholder count: a fixed constant in
-// static mode, or width*height/factor in dynamic mode. Always >= 1.
-func (e videoEstimator) tokensPerFrame() int {
+// static mode, or width*height/factor in dynamic mode. A header-provided
+// resolution takes precedence over configuration. Always >= 1.
+func (e videoEstimator) tokensPerFrame(meta videoMetadata) int {
 	if e.tpfMode == videoTPFModeStatic {
 		if e.staticToken > 0 {
 			return e.staticToken
@@ -271,6 +299,9 @@ func (e videoEstimator) tokensPerFrame() int {
 		return 1
 	}
 	w, h := e.defWidth, e.defHeight
+	if meta.width > 0 && meta.height > 0 {
+		w, h = meta.width, meta.height
+	}
 	if w <= 0 {
 		w = defaultVideoWidth
 	}

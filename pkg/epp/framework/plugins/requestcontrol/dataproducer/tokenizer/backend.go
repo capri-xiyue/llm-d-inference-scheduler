@@ -32,7 +32,7 @@ import (
 // tokenInputProducer turns a request body into a TokenizedPrompt. Backends vary
 // in fidelity (render vs estimate); callers never branch on which produced it.
 type tokenInputProducer interface {
-	produce(ctx context.Context, body *fwkrh.InferenceRequestBody) (*fwkrh.TokenizedPrompt, error)
+	produce(ctx context.Context, body *fwkrh.InferenceRequestBody, meta mmMetadata) (*fwkrh.TokenizedPrompt, error)
 }
 
 // timeoutAware is implemented by backends (and the tokenizers they wrap) whose
@@ -70,8 +70,8 @@ type warmer interface {
 func (b renderBackend) warmup(ctx context.Context) {
 	logger := log.FromContext(ctx).V(logutil.DEBUG)
 	for i := 0; i < warmupAttempts; i++ {
-		if _, err := b.produce(ctx, warmupChat()); err == nil {
-			_, _ = b.produce(ctx, warmupChat(warmupImage))
+		if _, err := b.produce(ctx, warmupChat(), mmMetadata{}); err == nil {
+			_, _ = b.produce(ctx, warmupChat(warmupImage), mmMetadata{})
 			logger.Info("token-producer backend warmed up", "attempts", i+1)
 			return
 		}
@@ -104,7 +104,7 @@ type renderBackend struct {
 	tk tokenizer
 }
 
-func (b renderBackend) produce(ctx context.Context, body *fwkrh.InferenceRequestBody) (*fwkrh.TokenizedPrompt, error) {
+func (b renderBackend) produce(ctx context.Context, body *fwkrh.InferenceRequestBody, _ mmMetadata) (*fwkrh.TokenizedPrompt, error) {
 	switch {
 	case body.Completions != nil:
 		if ids := body.Completions.Prompt.TokenIDs; len(ids) > 0 {

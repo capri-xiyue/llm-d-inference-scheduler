@@ -216,7 +216,7 @@ func TestRenderBackend_CompletionsTokenIDsPassthrough(t *testing.T) {
 	}
 	tp, err := renderBackend{tk: tok}.produce(context.Background(), &fwkrh.InferenceRequestBody{
 		Completions: &fwkrh.CompletionsRequest{Prompt: fwkrh.Prompt{TokenIDs: []uint32{5, 6, 7}}},
-	})
+	}, mmMetadata{})
 	require.NoError(t, err)
 	assert.Equal(t, []uint32{5, 6, 7}, tp.PerPromptTokens[0])
 }
@@ -234,7 +234,7 @@ func TestRenderBackend_CompletionsArrayPassesArrayPayload(t *testing.T) {
 	}
 	tp, err := renderBackend{tk: tok}.produce(context.Background(), &fwkrh.InferenceRequestBody{
 		Completions: &fwkrh.CompletionsRequest{Prompt: fwkrh.Prompt{Strings: []string{"alpha", "beta"}}},
-	})
+	}, mmMetadata{})
 	require.NoError(t, err)
 	assert.Equal(t, [][]uint32{{1, 2}, {3}}, tp.PerPromptTokens)
 }
@@ -251,7 +251,7 @@ func TestRenderBackend_CompletionsSingleArrayUsesPlainText(t *testing.T) {
 	}
 	tp, err := renderBackend{tk: tok}.produce(context.Background(), &fwkrh.InferenceRequestBody{
 		Completions: &fwkrh.CompletionsRequest{Prompt: fwkrh.Prompt{Strings: []string{"alpha beta"}}},
-	})
+	}, mmMetadata{})
 	require.NoError(t, err)
 	assert.Equal(t, "alpha beta", got)
 	assert.Equal(t, [][]uint32{{1}}, tp.PerPromptTokens)

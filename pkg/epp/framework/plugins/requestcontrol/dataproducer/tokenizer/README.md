@@ -67,8 +67,16 @@ Video estimation is `min(frames × tokensPerFrame, maxVideoTokens)`. The per-fra
 token count and the frame count are configured independently, so the two common
 model shapes are mode combinations: qwen3 is `tokensPerFrame.mode=dynamic` +
 `frames.mode=sampled`; gemma4 is `tokensPerFrame.mode=static` +
-`frames.mode=strided`. Video duration and resolution are not decoded from the
-request; they come from the config below.
+`frames.mode=strided`. Video duration, resolution, and source FPS come from the
+`x-llm-d-video-*` request headers below when present; otherwise each falls back to
+its config value and then the built-in default. Headers are request-level, so they
+apply to every video in the request.
+
+| Request header                  | Format          | Description                                     |
+| ------------------------------- | --------------- | ----------------------------------------------- |
+| `x-llm-d-video-duration-seconds`| float seconds   | Video length; overrides `defaultDuration`.      |
+| `x-llm-d-video-resolution`      | `WIDTHxHEIGHT`  | Frame resolution; overrides `defaultResolution`.|
+| `x-llm-d-video-fps`             | float           | Source frame rate; overrides `frames.sourceFPS` (strided mode). |
 
 | Parameter                             | Default   | Description                                                                     |
 | ------------------------------------- | --------- | ------------------------------------------------------------------------------- |
@@ -77,11 +85,11 @@ request; they come from the config below.
 | `estimate.video.tokensPerFrame.staticToken` | –   | Static-mode per-frame placeholder count.                                        |
 | `estimate.video.frames.mode`          | `sampled` | `sampled` (duration×sampleFPS) or `strided` (min(duration×sourceFPS/frameStride, maxFrames)). |
 | `estimate.video.frames.sampleFPS`     | `1`       | Sampled-mode sampling rate.                                                      |
-| `estimate.video.frames.sourceFPS`     | `24`      | Strided-mode source frame rate.                                                 |
+| `estimate.video.frames.sourceFPS`     | `24`      | Strided-mode source frame rate; fallback for the `x-llm-d-video-fps` header.     |
 | `estimate.video.frames.frameStride`   | `1`       | Strided-mode divisor: keep every Nth source frame.                              |
 | `estimate.video.frames.maxFrames`     | –         | Strided-mode frame cap (0 = uncapped).                                          |
-| `estimate.video.defaultResolution`    | 640×360   | Per-frame resolution used for dynamic tokens-per-frame.                         |
-| `estimate.video.defaultDuration`      | `10`      | Video length in seconds used for frame counting.                                |
+| `estimate.video.defaultResolution`    | 640×360   | Per-frame resolution for dynamic tokens-per-frame; fallback for the `x-llm-d-video-resolution` header. |
+| `estimate.video.defaultDuration`      | `10`      | Video length in seconds for frame counting; fallback for the `x-llm-d-video-duration-seconds` header. |
 | `estimate.video.maxVideoTokens`       | –         | Overall placeholder cap for a video (0 = uncapped).                            |
 
 ## Failure mode
