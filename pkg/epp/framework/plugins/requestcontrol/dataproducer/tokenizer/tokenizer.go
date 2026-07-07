@@ -316,7 +316,8 @@ func (p *Plugin) Produce(ctx context.Context, request *scheduling.InferenceReque
 		return nil
 	}
 
-	tp, err := p.backend.produce(ctx, request.Body, parseMMMetadataHeaders(request.Headers))
+	ctx = withMMMetadata(ctx, parseMMMetadataHeaders(request.Headers))
+	tp, err := p.backend.produce(ctx, request.Body)
 	if err != nil {
 		return err
 	}

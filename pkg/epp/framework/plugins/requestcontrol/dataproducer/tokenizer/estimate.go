@@ -52,6 +52,22 @@ func parseMMMetadataHeaders(headers map[string]string) mmMetadata {
 	return mmMetadata{video: parseVideoMetadataHeaders(headers)}
 }
 
+// mmMetadataCtxKey keys the request-scoped mmMetadata on the context, carrying it
+// from Plugin.Produce (which holds request.Headers) to the estimate backend
+// without widening the shared tokenInputProducer.produce signature.
+type mmMetadataCtxKey struct{}
+
+// withMMMetadata returns ctx carrying meta.
+func withMMMetadata(ctx context.Context, meta mmMetadata) context.Context {
+	return context.WithValue(ctx, mmMetadataCtxKey{}, meta)
+}
+
+// mmMetadataFromContext returns the mmMetadata on ctx, or the zero value.
+func mmMetadataFromContext(ctx context.Context) mmMetadata {
+	meta, _ := ctx.Value(mmMetadataCtxKey{}).(mmMetadata)
+	return meta
+}
+
 // parseVideoMetadataHeaders reads the x-llm-d-video- request headers into a
 // videoMetadata, using metadata.GetLowerCaseHeaderValue so aliases resolve the
 // same way as the SLO headers. Missing or malformed values leave their field zero
@@ -92,7 +108,7 @@ func parseResolution(s string) (width, height int) {
 	return w, h
 }
 
-func (b estimateBackend) produce(ctx context.Context, body *fwkrh.InferenceRequestBody, meta mmMetadata) (*fwkrh.TokenizedPrompt, error) {
+func (b estimateBackend) produce(ctx context.Context, body *fwkrh.InferenceRequestBody) (*fwkrh.TokenizedPrompt, error) {
 	// Pre-tokenized inputs are already real tokens; pass them through unchanged
 	// rather than byte-estimating. Token-ID inputs are valid for generate,
 	// /v1/completions, and /v1/embeddings.
@@ -111,7 +127,7 @@ func (b estimateBackend) produce(ctx context.Context, body *fwkrh.InferenceReque
 	// Chat and Anthropic messages fold multimodal placeholders into the stream
 	// and report them as features.
 	if body.ChatCompletions != nil {
-		raw, features := b.chatCompletionsBytes(body.ChatCompletions, meta)
+		raw, features := b.chatCompletionsBytes(body.ChatCompletions, mmMetadataFromContext(ctx))
 		return &fwkrh.TokenizedPrompt{PerPromptTokens: [][]uint32{packBytes(raw)}, MultiModalFeatures: features}, nil
 	}
 	if body.Messages != nil {
