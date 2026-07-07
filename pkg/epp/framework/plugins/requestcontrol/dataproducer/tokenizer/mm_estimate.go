@@ -231,7 +231,7 @@ func newVideoEstimator(cfg *estimateConfig) videoEstimator {
 	if vid.Frames != nil {
 		est.framesMode = vid.Frames.Mode
 		est.sampleFPS = vid.Frames.SampleFPS
-		est.sourceFPS = vid.Frames.SourceFPS
+		est.sourceFPS = vid.Frames.DefaultSourceFPS
 		est.frameStride = vid.Frames.FrameStride
 		est.maxFrames = vid.Frames.MaxFrames
 	}

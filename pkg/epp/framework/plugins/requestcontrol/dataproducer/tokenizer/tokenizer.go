@@ -156,8 +156,9 @@ type framesConfig struct {
 	Mode string `json:"mode,omitempty"`
 	// SampleFPS is the sampling rate in sampled mode.
 	SampleFPS float64 `json:"sampleFPS,omitempty"`
-	// SourceFPS is the source frame rate in strided mode.
-	SourceFPS float64 `json:"sourceFPS,omitempty"`
+	// DefaultSourceFPS is the fallback source frame rate in strided mode, used
+	// when the x-llm-d-video-fps header is absent.
+	DefaultSourceFPS float64 `json:"defaultSourceFPS,omitempty"`
 	// FrameStride keeps every Nth source frame in strided mode.
 	FrameStride int `json:"frameStride,omitempty"`
 	// MaxFrames caps the frame count in strided mode. Zero means uncapped.

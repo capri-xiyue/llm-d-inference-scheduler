@@ -76,7 +76,7 @@ apply to every video in the request.
 | ------------------------------- | --------------- | ----------------------------------------------- |
 | `x-llm-d-video-duration-seconds`| float seconds   | Video length; overrides `defaultDuration`.      |
 | `x-llm-d-video-resolution`      | `WIDTHxHEIGHT`  | Frame resolution; overrides `defaultResolution`.|
-| `x-llm-d-video-fps`             | float           | Source frame rate; overrides `frames.sourceFPS` (strided mode). |
+| `x-llm-d-video-fps`             | float           | Source frame rate; overrides `frames.defaultSourceFPS` (strided mode). |
 
 | Parameter                             | Default   | Description                                                                     |
 | ------------------------------------- | --------- | ------------------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ apply to every video in the request.
 | `estimate.video.tokensPerFrame.staticToken` | –   | Static-mode per-frame placeholder count.                                        |
 | `estimate.video.frames.mode`          | `sampled` | `sampled` (duration×sampleFPS) or `strided` (min(duration×sourceFPS/frameStride, maxFrames)). |
 | `estimate.video.frames.sampleFPS`     | `1`       | Sampled-mode sampling rate.                                                      |
-| `estimate.video.frames.sourceFPS`     | `24`      | Strided-mode source frame rate; fallback for the `x-llm-d-video-fps` header.     |
+| `estimate.video.frames.defaultSourceFPS` | `24`   | Strided-mode source frame rate; fallback for the `x-llm-d-video-fps` header.     |
 | `estimate.video.frames.frameStride`   | `1`       | Strided-mode divisor: keep every Nth source frame.                              |
 | `estimate.video.frames.maxFrames`     | –         | Strided-mode frame cap (0 = uncapped).                                          |
 | `estimate.video.defaultResolution`    | 640×360   | Per-frame resolution for dynamic tokens-per-frame; fallback for the `x-llm-d-video-resolution` header. |

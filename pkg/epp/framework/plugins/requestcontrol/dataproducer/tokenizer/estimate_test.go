@@ -282,7 +282,7 @@ func TestVideoEstimator_SampledFrames(t *testing.T) {
 func TestVideoEstimator_StridedFramesCapped(t *testing.T) {
 	b := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
 		DefaultDuration: 10,
-		Frames:          &framesConfig{Mode: videoFramesModeStrided, SourceFPS: 24, FrameStride: 4, MaxFrames: 16},
+		Frames:          &framesConfig{Mode: videoFramesModeStrided, DefaultSourceFPS: 24, FrameStride: 4, MaxFrames: 16},
 		TokensPerFrame:  &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 100},
 	}})}
 	tp, err := b.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
@@ -321,7 +321,7 @@ func TestVideoEstimator_Qwen3AndGemma4(t *testing.T) {
 	gemma4 := estimateBackend{vid: newVideoEstimator(&estimateConfig{Video: &videoEstimateConfig{
 		DefaultDuration: 10,
 		TokensPerFrame:  &tokensPerFrameConfig{Mode: videoTPFModeStatic, StaticToken: 256},
-		Frames:          &framesConfig{Mode: videoFramesModeStrided, SourceFPS: 24, FrameStride: 4, MaxFrames: 16},
+		Frames:          &framesConfig{Mode: videoFramesModeStrided, DefaultSourceFPS: 24, FrameStride: 4, MaxFrames: 16},
 	}})}
 	tp, err = gemma4.produce(context.Background(), chatVideoBody("https://example.com/clip.mp4"))
 	require.NoError(t, err)
