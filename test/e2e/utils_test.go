@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	deploymentKind = "deployment"
+	deploymentKind           = "deployment"
+	kubernetesDeploymentKind = "Deployment"
 )
 
 func scaleDeployment(objects []string, increment int) {
@@ -237,7 +238,7 @@ func filterDocument(doc string) string {
 	if len(obj.Object) == 0 {
 		return doc
 	}
-	if obj.GetKind() == "Deployment" {
+	if obj.GetKind() == kubernetesDeploymentKind {
 		removePodSpecListItem(obj, "containers", "vllm-render")
 		removePodSpecListItem(obj, "initContainers", "vllm-render")
 		removePodSpecListItem(obj, "volumes", "model-cache")
@@ -304,7 +305,7 @@ func appendArgsToEppContainer(doc string, args []string) string {
 	obj := &unstructured.Unstructured{}
 	err := yaml.Unmarshal([]byte(doc), &obj.Object)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	if len(obj.Object) == 0 || obj.GetKind() != "Deployment" {
+	if len(obj.Object) == 0 || obj.GetKind() != kubernetesDeploymentKind {
 		return doc
 	}
 	path := []string{"spec", "template", "spec", "containers"}
