@@ -127,7 +127,7 @@ func (b estimateBackend) produce(ctx context.Context, body *fwkrh.InferenceReque
 	// Chat and Anthropic messages fold multimodal placeholders into the stream
 	// and report them as features.
 	if body.ChatCompletions != nil {
-		raw, features := b.chatCompletionsBytes(body.ChatCompletions, mmMetadataFromContext(ctx))
+		raw, features := b.chatCompletionsBytes(ctx, body.ChatCompletions, mmMetadataFromContext(ctx))
 		return &fwkrh.TokenizedPrompt{PerPromptTokens: [][]uint32{packBytes(raw)}, MultiModalFeatures: features}, nil
 	}
 	if body.Messages != nil {
@@ -193,7 +193,7 @@ func estimateBytes(body *fwkrh.InferenceRequestBody) ([]byte, error) {
 // multimodal assets in on aligned boundaries. Each asset occupies N placeholder
 // pseudo-tokens (its content hash repeated N times) so it carries weight in the
 // stream, and is reported as a MultiModalFeature with its token offset and span.
-func (b estimateBackend) chatCompletionsBytes(chat *fwkrh.ChatCompletionsRequest, meta mmMetadata) ([]byte, []fwkrh.MultiModalFeature) {
+func (b estimateBackend) chatCompletionsBytes(ctx context.Context, chat *fwkrh.ChatCompletionsRequest, meta mmMetadata) ([]byte, []fwkrh.MultiModalFeature) {
 	var out []byte
 	var features []fwkrh.MultiModalFeature
 	if len(chat.Tools) > 0 {
@@ -202,14 +202,14 @@ func (b estimateBackend) chatCompletionsBytes(chat *fwkrh.ChatCompletionsRequest
 		}
 	}
 	for _, msg := range chat.Messages {
-		out, features = b.appendChatMessage(out, features, msg, meta)
+		out, features = b.appendChatMessage(ctx, out, features, msg, meta)
 	}
 	return out, features
 }
 
 // appendChatMessage flattens a single chat-completions message into the byte
 // stream, recording multimodal placeholders on aligned boundaries.
-func (b estimateBackend) appendChatMessage(out []byte, features []fwkrh.MultiModalFeature, msg fwkrh.Message, meta mmMetadata) ([]byte, []fwkrh.MultiModalFeature) {
+func (b estimateBackend) appendChatMessage(ctx context.Context, out []byte, features []fwkrh.MultiModalFeature, msg fwkrh.Message, meta mmMetadata) ([]byte, []fwkrh.MultiModalFeature) {
 	if msg.Role != "" {
 		out = append(out, []byte(msg.Role)...)
 	}
@@ -224,7 +224,7 @@ func (b estimateBackend) appendChatMessage(out []byte, features []fwkrh.MultiMod
 		case "image_url":
 			out, features = appendMMAsset(out, features, fwkrh.ModalityImage, block.ImageURL.URL, b.img.placeholderCount(block.ImageURL.URL))
 		case "video_url":
-			out, features = appendMMAsset(out, features, fwkrh.ModalityVideo, block.VideoURL.URL, b.vid.placeholderCount(meta.video))
+			out, features = appendMMAsset(out, features, fwkrh.ModalityVideo, block.VideoURL.URL, b.vid.placeholderCount(ctx, meta.video))
 		case "input_audio", "audio_url":
 			data := block.InputAudio.Data + block.InputAudio.Format
 			out, features = appendMMAsset(out, features, fwkrh.ModalityAudio, data, assetPlaceholderCount(len(data)))

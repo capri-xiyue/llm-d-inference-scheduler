@@ -18,6 +18,7 @@ package tokenizer
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"image"
 	"strings"
@@ -27,6 +28,9 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 )
 
@@ -244,14 +248,21 @@ func newVideoEstimator(cfg *estimateConfig) videoEstimator {
 
 // placeholderCount estimates placeholder tokens for a video from its request
 // metadata. Always >= 1 so every video carries weight.
-func (e videoEstimator) placeholderCount(meta videoMetadata) int {
+func (e videoEstimator) placeholderCount(ctx context.Context, meta videoMetadata) int {
 	tokens := e.frameCount(meta) * e.tokensPerFrame(meta)
 	if e.maxVideoTokens > 0 && tokens > e.maxVideoTokens {
 		tokens = e.maxVideoTokens
 	}
 	if tokens < 1 {
-		return 1
+		tokens = 1
 	}
+	log.FromContext(ctx).V(logutil.DEFAULT).Info("video placeholder estimation",
+		"duration", meta.duration,
+		"fps", meta.fps,
+		"width", meta.width,
+		"height", meta.height,
+		"placeholderCount", tokens,
+	)
 	return tokens
 }
 
