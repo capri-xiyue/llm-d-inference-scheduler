@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kvcacheretention
+package interturnlatency
 
 import (
 	"math"
@@ -83,18 +83,4 @@ func TestLogNormalEstimator_StdFloor(t *testing.T) {
 
 	_, logStd, _ := estimator.snapshot()
 	assert.Equal(t, minLogStd, logStd)
-}
-
-func TestLogNormalEstimator_Quantile(t *testing.T) {
-	t.Parallel()
-
-	estimator := newLogNormalEstimator(2.0, 1.0, 0.1, 20, 200)
-
-	// The median of a log-normal is exp(logMean).
-	assert.InDelta(t, math.Exp(2.0), estimator.quantile(0.5), 1e-9)
-	// The 90th percentile z-score is about 1.2816.
-	assert.InDelta(t, math.Exp(2.0+1.2816), estimator.quantile(0.9), 1e-3*math.Exp(2.0+1.2816))
-	// Quantiles are monotonic in q.
-	assert.Less(t, estimator.quantile(0.5), estimator.quantile(0.9))
-	assert.Less(t, estimator.quantile(0.1), estimator.quantile(0.5))
 }

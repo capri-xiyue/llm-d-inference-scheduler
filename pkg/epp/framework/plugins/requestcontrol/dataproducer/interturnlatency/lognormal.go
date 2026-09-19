@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kvcacheretention
+package interturnlatency
 
 import (
 	"math"
@@ -95,16 +95,6 @@ func (e *logNormalEstimator) sampleCount() int {
 		return len(e.window)
 	}
 	return e.next
-}
-
-// quantile returns the q-quantile of the fitted distribution, in seconds.
-func (e *logNormalEstimator) quantile(q float64) float64 {
-	e.mu.Lock()
-	logMean, logStd := e.logMean, e.logStd
-	e.mu.Unlock()
-
-	z := math.Sqrt2 * math.Erfinv(2*q-1)
-	return math.Exp(logMean + logStd*z)
 }
 
 // snapshot returns the fitted parameters and the total observation count.

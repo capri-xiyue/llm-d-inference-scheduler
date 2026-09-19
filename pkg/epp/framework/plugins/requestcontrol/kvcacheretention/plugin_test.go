@@ -26,10 +26,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
-	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
 	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
+	attrinterturn "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/interturn"
+	attrsession "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/session"
 )
+
+// seedPrediction is the CC-Bench seed fit of the
+// session-interturn-latency-producer.
+var seedPrediction = attrinterturn.InterTurnPrediction{LogMean: 2.28, LogStd: 1.34}
 
 func newTestPlugin(t *testing.T, mutate func(*Config)) *Plugin {
 	t.Helper()
@@ -42,17 +47,20 @@ func newTestPlugin(t *testing.T, mutate func(*Config)) *Plugin {
 	return p
 }
 
-func agenticRequest(sessionID string) *fwksched.InferenceRequest {
-	return &fwksched.InferenceRequest{
+// sessionRequest carries the attributes the session-id-producer and the
+// session-interturn-latency-producer publish.
+func sessionRequest(sessionID string) *fwksched.InferenceRequest {
+	request := &fwksched.InferenceRequest{
 		RequestID: "req-1",
-		Headers: map[string]string{
-			"x-session-id":   sessionID,
-			"x-session-type": "agentic",
-		},
 		Body: &fwkrh.InferenceRequestBody{
 			Payload: fwkrh.PayloadMap{"model": "m", "messages": []any{}},
 		},
 	}
+	if sessionID != "" {
+		request.PutAttribute(attrsession.SessionIDDataKey, attrsession.SessionID(sessionID))
+	}
+	request.PutAttribute(attrinterturn.InterTurnPredictionDataKey, seedPrediction)
+	return request
 }
 
 func directive(t *testing.T, request *fwksched.InferenceRequest) map[string]any {
@@ -88,7 +96,7 @@ func TestPreRequest_InjectsDirective(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPlugin(t, nil)
-	request := agenticRequest("s1")
+	request := sessionRequest("s1")
 
 	require.NoError(t, p.PreRequest(t.Context(), request, nil))
 
@@ -101,52 +109,46 @@ func TestPreRequest_InjectsDirective(t *testing.T) {
 	assert.Nil(t, d["end"])
 	assert.Equal(t, 70, d["priority"])
 
-	// With no observations the duration comes from the seed parameters:
-	// the 0.9 quantile of LogNormal(2.28, 1.34).
+	// The duration is the 0.9 quantile of the published prediction.
 	wantSeconds := math.Exp(2.28 + 1.34*math.Sqrt2*math.Erfinv(2*0.9-1))
 	assert.InDelta(t, wantSeconds, d["duration"], 1e-6)
 }
 
-func TestPreRequest_SkipsNonMatchingRequests(t *testing.T) {
+func TestPreRequest_SkipsWithoutAttributes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
-		headers map[string]string
+		request *fwksched.InferenceRequest
 	}{
-		{name: "no session id", headers: map[string]string{"x-session-type": "agentic"}},
-		{name: "wrong session type", headers: map[string]string{"x-session-id": "s1", "x-session-type": "chat"}},
-		{name: "missing session type", headers: map[string]string{"x-session-id": "s1"}},
+		{name: "no session id", request: sessionRequest("")},
+		{name: "no prediction", request: func() *fwksched.InferenceRequest {
+			r := &fwksched.InferenceRequest{
+				RequestID: "req-1",
+				Body: &fwkrh.InferenceRequestBody{
+					Payload: fwkrh.PayloadMap{"model": "m"},
+				},
+			}
+			r.PutAttribute(attrsession.SessionIDDataKey, attrsession.SessionID("s1"))
+			return r
+		}()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := newTestPlugin(t, nil)
-			request := agenticRequest("s1")
-			request.Headers = tt.headers
 
-			require.NoError(t, p.PreRequest(t.Context(), request, nil))
-			assert.False(t, request.Body.Mutated)
+			require.NoError(t, p.PreRequest(t.Context(), tt.request, nil))
+			assert.False(t, tt.request.Body.Mutated)
 		})
 	}
-}
-
-func TestPreRequest_SessionTypeEmptyMatchesAll(t *testing.T) {
-	t.Parallel()
-
-	p := newTestPlugin(t, func(cfg *Config) { cfg.SessionType = "" })
-	request := agenticRequest("s1")
-	delete(request.Headers, "x-session-type")
-
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-	assert.True(t, request.Body.Mutated)
 }
 
 func TestPreRequest_ClientDirectivesWin(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPlugin(t, nil)
-	request := agenticRequest("s1")
+	request := sessionRequest("s1")
 	clientDirectives := []any{map[string]any{"start": 0, "priority": 99}}
 	payload, _ := request.Body.Payload.AsMap()
 	payload[retentionDirectivesField] = clientDirectives
@@ -158,122 +160,24 @@ func TestPreRequest_ClientDirectivesWin(t *testing.T) {
 	assert.NotContains(t, payload, retentionScopeField)
 }
 
-func TestPreRequest_NonMapPayloadStillObserves(t *testing.T) {
-	t.Parallel()
-
-	p := newTestPlugin(t, func(cfg *Config) { cfg.MinSamples = 2 })
-	base := time.Unix(1000, 0)
-	clock := base
-	p.now = func() time.Time { return clock }
-
-	request := agenticRequest("s1")
-	request.Body.Payload = fwkrh.RawPayload(`{}`)
-
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-	clock = base.Add(10 * time.Second)
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	assert.False(t, request.Body.Mutated)
-	_, _, observed := p.estimator.snapshot()
-	assert.EqualValues(t, 1, observed)
-}
-
-func TestGapObservation_MeasuresIdleFromResponseCompletion(t *testing.T) {
-	t.Parallel()
-
-	// EMAFactor 1 and MinSamples 2 make the fitted logMean equal the sample
-	// mean of the observed gaps, exposing the measured values directly.
-	p := newTestPlugin(t, func(cfg *Config) { cfg.EMAFactor = 1.0; cfg.MinSamples = 2 })
-	base := time.Unix(1000, 0)
-	clock := base
-	p.now = func() time.Time { return clock }
-
-	request := agenticRequest("s1")
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	// Each turn completes 20s after arrival; the next arrives 30s after
-	// completion. The observed gap must be the 30s idle time, not the 50s
-	// arrival-to-arrival time.
-	clock = base.Add(20 * time.Second)
-	p.ResponseBody(t.Context(), request, &requestcontrol.Response{EndOfStream: true}, nil)
-	clock = base.Add(50 * time.Second)
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	clock = base.Add(70 * time.Second)
-	p.ResponseBody(t.Context(), request, &requestcontrol.Response{EndOfStream: true}, nil)
-	clock = base.Add(100 * time.Second)
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	logMean, _, observed := p.estimator.snapshot()
-	assert.EqualValues(t, 2, observed)
-	assert.InDelta(t, math.Log(30), logMean, 1e-9)
-}
-
-func TestGapObservation_DiscardsSubMinIntervals(t *testing.T) {
+func TestPreRequest_NonMapPayloadUntouched(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPlugin(t, nil)
-	base := time.Unix(1000, 0)
-	clock := base
-	p.now = func() time.Time { return clock }
+	request := sessionRequest("s1")
+	request.Body.Payload = fwkrh.RawPayload(`{}`)
 
-	request := agenticRequest("s1")
 	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	clock = base.Add(10 * time.Millisecond)
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	_, _, observed := p.estimator.snapshot()
-	assert.EqualValues(t, 0, observed)
+	assert.False(t, request.Body.Mutated)
 }
 
 func TestRetentionDuration_Clamped(t *testing.T) {
 	t.Parallel()
 
-	// Seed parameters put the 0.9 quantile near 54s; clamps override it.
+	// The seed prediction puts the 0.9 quantile near 54s; clamps override it.
 	pMin := newTestPlugin(t, func(cfg *Config) { cfg.MinRetention = "2m"; cfg.MaxRetention = "5m" })
-	assert.Equal(t, 2*time.Minute, pMin.retentionDuration())
+	assert.Equal(t, 2*time.Minute, pMin.retentionDuration(seedPrediction))
 
 	pMax := newTestPlugin(t, func(cfg *Config) { cfg.MaxRetention = "10s" })
-	assert.Equal(t, 10*time.Second, pMax.retentionDuration())
-}
-
-func TestResponseBody_IgnoresNonFinalChunks(t *testing.T) {
-	t.Parallel()
-
-	p := newTestPlugin(t, nil)
-	base := time.Unix(1000, 0)
-	clock := base
-	p.now = func() time.Time { return clock }
-
-	request := agenticRequest("s1")
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	clock = base.Add(20 * time.Second)
-	p.ResponseBody(t.Context(), request, &requestcontrol.Response{EndOfStream: false}, nil)
-
-	// The gap origin stays at the request arrival because no final chunk was
-	// seen.
-	clock = base.Add(50 * time.Second)
-	gap, ok := p.tracker.observe("s1", clock)
-	require.True(t, ok)
-	assert.Equal(t, 50*time.Second, gap)
-}
-
-func TestDumpState(t *testing.T) {
-	t.Parallel()
-
-	p := newTestPlugin(t, nil)
-	request := agenticRequest("s1")
-	require.NoError(t, p.PreRequest(t.Context(), request, nil))
-
-	raw, err := p.DumpState()
-	require.NoError(t, err)
-
-	var state debugState
-	require.NoError(t, json.Unmarshal(raw, &state))
-	assert.Equal(t, 2.28, state.LogMean)
-	assert.Equal(t, 1.34, state.LogStd)
-	assert.Equal(t, 1, state.TrackedSessions)
-	assert.Positive(t, state.RetentionSeconds)
+	assert.Equal(t, 10*time.Second, pMax.retentionDuration(seedPrediction))
 }
