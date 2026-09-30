@@ -65,6 +65,19 @@ const (
 	VideoResolutionHeaderKey = "x-llm-d-video-resolution"
 	// AudioDurationHeaderKey is the header key used to specify a request's audio length in seconds.
 	AudioDurationHeaderKey = "x-llm-d-audio-duration-seconds"
+	// RequestPriorityHeaderKey is the header key carrying a per-request agent hint: the unified request priority
+	// (higher = more urgent). Body equivalent: `llmdext.agent_hints.priority`.
+	RequestPriorityHeaderKey = "x-llm-d-request-priority"
+	// RequestStrictPriorityHeaderKey is the header key carrying a per-request agent hint: the strict queue tier
+	// (unsigned, higher tiers always precede lower tiers). Body equivalent: `llmdext.agent_hints.strict_priority`.
+	RequestStrictPriorityHeaderKey = "x-llm-d-request-strict-priority"
+	// ExpectedOutputTokensHeaderKey is the header key carrying a per-request agent hint: the expected output
+	// sequence length in tokens. Body equivalent: `llmdext.agent_hints.osl`.
+	ExpectedOutputTokensHeaderKey = "x-llm-d-expected-output-tokens"
+	// SpeculativePrefillHeaderKey is the header key carrying a per-request agent hint: whether the next-turn
+	// prefix should be speculatively prefilled once this turn completes. Body
+	// equivalent: `llmdext.agent_hints.speculative_prefill`.
+	SpeculativePrefillHeaderKey = "x-llm-d-speculative-prefill"
 	// FlowQueueDurationHeaderKey is the response header carrying the time a request spent in flow control admission,
 	// as integer milliseconds. It is absent when flow control did not process the request.
 	FlowQueueDurationHeaderKey = "x-llm-d-flow-queue-duration-ms"

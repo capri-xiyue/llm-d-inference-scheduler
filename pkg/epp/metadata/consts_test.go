@@ -28,6 +28,9 @@ func TestHeaderAliases(t *testing.T) {
 	assert.Equal(t, []string{ObjectiveKey, OldObjectiveKey}, HeaderNames(ObjectiveKey))
 	assert.Equal(t, []string{ObjectiveKey, OldObjectiveKey}, HeaderNames("X-LLM-D-Inference-Objective"))
 	assert.Equal(t, []string{TTFTSLOHeaderKey, OldTTFTSLOHeaderKey}, HeaderNames(TTFTSLOHeaderKey))
+	assert.Equal(t, []string{RequestPriorityHeaderKey}, HeaderNames(RequestPriorityHeaderKey))
+	assert.Equal(t, []string{RequestStrictPriorityHeaderKey}, HeaderNames(RequestStrictPriorityHeaderKey))
+	assert.Equal(t, []string{ExpectedOutputTokensHeaderKey}, HeaderNames(ExpectedOutputTokensHeaderKey))
 	assert.Equal(t, []string{DestinationEndpointKey}, HeaderNames(DestinationEndpointKey))
 	assert.Equal(t, []string{"x-user-header"}, HeaderNames("X-User-Header"))
 }
