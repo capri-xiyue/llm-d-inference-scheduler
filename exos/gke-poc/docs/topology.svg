@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820">
+  <style>
+    text { font-family: Roboto, Arial, sans-serif; fill: #202124; }
+    .t  { font-size: 16px; font-weight: 700; }
+    .s  { font-size: 13px; }
+    .g  { font-size: 13px; fill: #5f6368; }
+    .r  { font-size: 13px; fill: #c5221f; }
+    .m  { font-family: "Roboto Mono", "DejaVu Sans Mono", monospace; font-size: 12px; }
+    .ct { font-size: 17px; font-weight: 700; }
+    .cs { font-size: 13px; fill: #5f6368; }
+    .lb { font-size: 13px; font-weight: 500; }
+    .num { font-weight: 700; }
+    .blue { fill: #1967d2; } .orange { fill: #b06000; } .gray { fill: #5f6368; }
+  </style>
+  <defs>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1a73e8"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e37400"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#80868b"/></marker>
+  </defs>
+  <rect width="1400" height="820" fill="#ffffff"/>
+
+  <!-- Top row: client, legend, infra.sh -->
+  <rect x="275" y="24" width="250" height="64" rx="12" fill="#f1f3f4" stroke="#5f6368" stroke-width="1.5"/>
+  <text x="400" y="51" text-anchor="middle" class="t">Client</text>
+  <text x="400" y="72" text-anchor="middle" class="g">curl pod in the cluster</text>
+
+  <rect x="570" y="14" width="320" height="94" rx="10" fill="#ffffff" stroke="#dadce0"/>
+  <text x="586" y="36" class="lb">Legend</text>
+  <line x1="590" y1="55" x2="640" y2="55" stroke="#1a73e8" stroke-width="2.5" marker-end="url(#ab)"/>
+  <text x="654" y="60" class="s">1–3  inference request</text>
+  <line x1="590" y1="75" x2="640" y2="75" stroke="#e37400" stroke-width="2" stroke-dasharray="7,5" marker-end="url(#ao)"/>
+  <text x="654" y="80" class="s">a–d  endpoint discovery</text>
+  <line x1="590" y1="95" x2="640" y2="95" stroke="#80868b" stroke-width="2" stroke-dasharray="2,4" marker-end="url(#ag)"/>
+  <text x="654" y="100" class="s">health / metrics probes</text>
+
+  <rect x="930" y="24" width="420" height="64" rx="12" fill="#ffffff" stroke="#9aa0a6" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="1140" y="51" text-anchor="middle" class="t" style="fill:#5f6368">linked-runner annotator</text>
+  <text x="1140" y="72" text-anchor="middle" class="g">in-cluster Deployment · ConfigMap → node annotations</text>
+
+  <!-- GKE cluster -->
+  <rect x="20" y="120" width="1360" height="470" rx="16" fill="#f8fbff" stroke="#1a73e8" stroke-width="2.5"/>
+  <text x="44" y="150" class="ct">GKE cluster  epp-poc</text>
+  <text x="44" y="171" class="cs">europe-west4-a · dual-stack · Dataplane V2</text>
+
+  <!-- Envoy -->
+  <rect x="80" y="200" width="380" height="80" rx="12" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.8"/>
+  <text x="270" y="228" text-anchor="middle" class="t">Envoy</text>
+  <text x="270" y="249" text-anchor="middle" class="s">Deployment ×2 · :8080</text>
+  <text x="270" y="268" text-anchor="middle" class="g">strip client routing header → ext_proc → ORIGINAL_DST</text>
+
+  <!-- EPP -->
+  <rect x="80" y="420" width="380" height="100" rx="12" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.8"/>
+  <text x="270" y="450" text-anchor="middle" class="t">EPP (standalone)</text>
+  <text x="270" y="473" text-anchor="middle" class="s">:9002 gRPC · endpointslice-discovery plugin</text>
+  <text x="270" y="495" text-anchor="middle" class="g">queue + kv-cache scorers → max-score picker</text>
+
+  <!-- Control node -->
+  <rect x="600" y="190" width="760" height="160" rx="14" fill="#fce8e6" stroke="#d93025" stroke-width="1.8"/>
+  <text x="620" y="215"><tspan class="lb" style="font-size:15px;font-weight:700">Control node</tspan><tspan class="cs" dx="10">gke-epp-poc-control-pool-…-7k1s · 10.10.0.16</tspan></text>
+  <rect x="620" y="230" width="300" height="106" rx="10" fill="#ffffff" stroke="#d93025" stroke-width="1.5"/>
+  <text x="770" y="254" text-anchor="middle" class="t" style="font-size:14px">vllm-runner-0 / vllm-runner-1</text>
+  <text x="770" y="274" text-anchor="middle" class="s">hostNetwork pause pods</text>
+  <text x="770" y="296" text-anchor="middle" class="r">podIP = 10.10.0.16 for both →</text>
+  <text x="770" y="315" text-anchor="middle" class="r">Pod-based discovery can't tell them apart</text>
+  <path d="M940,230 H1326 L1340,244 V336 H940 Z" fill="#ffffff" stroke="#d93025" stroke-width="1.5"/>
+  <path d="M1326,230 V244 H1340" fill="none" stroke="#d93025" stroke-width="1.2"/>
+  <text x="1140" y="254" text-anchor="middle" class="t" style="font-size:14px">Node annotations</text>
+  <text x="1140" y="276" text-anchor="middle" class="m">linked-runner.runner-instance/…</text>
+  <text x="1140" y="298" text-anchor="middle" class="m">…/runner-us-central1-0 → 10.30.0.10</text>
+  <text x="1140" y="318" text-anchor="middle" class="m">…/runner-us-central1-1 → 10.30.0.14</text>
+
+  <!-- Service + EndpointSlices -->
+  <path d="M540,420 H886 L900,434 V520 H540 Z" fill="#fef7e0" stroke="#f9ab00" stroke-width="1.8"/>
+  <path d="M886,420 V434 H900" fill="none" stroke="#f9ab00" stroke-width="1.2"/>
+  <text x="720" y="446" text-anchor="middle" class="t" style="font-size:14px">Service glm52-server</text>
+  <text x="720" y="465" text-anchor="middle" class="g">headless · no selector · EndpointSlices:</text>
+  <text x="720" y="487" text-anchor="middle" class="m">…-us-central1-0-borneo 10.30.0.10 ready</text>
+  <text x="720" y="507" text-anchor="middle" class="m">…-us-central1-1-borneo 10.30.0.14 ready</text>
+
+  <!-- fake-ECP -->
+  <rect x="980" y="430" width="320" height="80" rx="12" fill="#fef7e0" stroke="#f9ab00" stroke-width="1.8"/>
+  <text x="1140" y="460" text-anchor="middle" class="t">fake-ECP</text>
+  <text x="1140" y="481" text-anchor="middle" class="s">Deployment</text>
+  <text x="1140" y="499" text-anchor="middle" class="g">stands in for Exos ECP</text>
+
+  <!-- GCE VMs -->
+  <rect x="20" y="645" width="1360" height="160" rx="16" fill="#f3faf5" stroke="#188038" stroke-width="2.5"/>
+  <text x="80" y="675"><tspan class="ct">GCE VMs outside GKE</tspan><tspan class="cs" x="470">stand-ins for Borneo linked runners · L4 · us-central1-a</tspan></text>
+  <rect x="120" y="710" width="360" height="70" rx="12" fill="#e6f4ea" stroke="#188038" stroke-width="1.8"/>
+  <text x="300" y="738" text-anchor="middle" class="t">runner-us-central1-0 · 10.30.0.10</text>
+  <text x="300" y="761" text-anchor="middle" class="s">vLLM · Qwen3.5-2B · :9080</text>
+  <rect x="900" y="710" width="360" height="70" rx="12" fill="#e6f4ea" stroke="#188038" stroke-width="1.8"/>
+  <text x="1080" y="738" text-anchor="middle" class="t">runner-us-central1-1 · 10.30.0.14</text>
+  <text x="1080" y="761" text-anchor="middle" class="s">vLLM · Qwen3.5-2B · :9080</text>
+
+  <!-- Inference request path (blue) -->
+  <line x1="400" y1="88" x2="400" y2="198" stroke="#1a73e8" stroke-width="2.5" marker-end="url(#ab)"/>
+  <text x="412" y="150" class="s blue"><tspan class="num">1</tspan>  POST /v1/chat/completions</text>
+  <line x1="200" y1="283" x2="200" y2="417" stroke="#1a73e8" stroke-width="2.5" marker-start="url(#ab)" marker-end="url(#ab)"/>
+  <text x="214" y="345" class="s blue"><tspan class="num">2</tspan>  ext_proc</text>
+  <text x="214" y="364" class="s blue">"which endpoint?"</text>
+  <path d="M80,240 H50 V745 H117" fill="none" stroke="#1a73e8" stroke-width="3" marker-end="url(#ab)"/>
+  <text x="62" y="612" class="s blue"><tspan class="num">3</tspan>  ORIGINAL_DST to the runner IP the EPP picked</text>
+  <text x="62" y="630" class="g">(x-gateway-destination-endpoint header)</text>
+
+  <!-- Endpoint discovery path (orange) -->
+  <line x1="1140" y1="88" x2="1140" y2="227" stroke="#e37400" stroke-width="2" stroke-dasharray="7,5" marker-end="url(#ao)"/>
+  <text x="1152" y="110" class="s orange"><tspan class="num">a</tspan>  keep annotations in sync</text>
+  <line x1="1140" y1="336" x2="1140" y2="427" stroke="#e37400" stroke-width="2" stroke-dasharray="7,5" marker-end="url(#ao)"/>
+  <text x="1152" y="387" class="s orange"><tspan class="num">b</tspan>  read every 5s</text>
+  <line x1="980" y1="470" x2="903" y2="470" stroke="#e37400" stroke-width="2" stroke-dasharray="7,5" marker-end="url(#ao)"/>
+  <text x="940" y="458" text-anchor="middle" class="s orange"><tspan class="num">c</tspan>  write</text>
+  <line x1="540" y1="470" x2="463" y2="470" stroke="#e37400" stroke-width="2" stroke-dasharray="7,5" marker-end="url(#ao)"/>
+  <text x="500" y="458" text-anchor="middle" class="s orange"><tspan class="num">d</tspan>  informer</text>
+
+  <!-- Probes (gray) -->
+  <line x1="420" y1="520" x2="420" y2="707" stroke="#80868b" stroke-width="2" stroke-dasharray="2,4" marker-end="url(#ag)"/>
+  <text x="432" y="560" class="s gray">scrape /metrics</text>
+  <line x1="1140" y1="510" x2="1140" y2="707" stroke="#80868b" stroke-width="2" stroke-dasharray="2,4" marker-end="url(#ag)"/>
+  <text x="1152" y="560" class="s gray">GET /health → slice ready</text>
+</svg>

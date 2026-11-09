@@ -12,7 +12,8 @@ Borneo linked-runner model servers from the EndpointSlices ECP publishes?
 |---|---|
 | `poc/simecp/` | Reproduces the Exos cluster: control node with `linked-runner.runner-instance/<runner>` annotations, hostNetwork model pods (podIP = control node IP), and ECP's headless Services and EndpointSlices (fields follow `ecp/server_main.go applyEndpointSliceInNamespace`) |
 | `poc/poc_test.go` | envtest apiserver + simecp + `cmd/epp` subprocess + ext_proc client acting as Envoy |
-| `gke-poc/` | Plan for validating on a real GKE cluster with GCE VMs as linked runners and a fake ECP |
+| `fakeecp/` | fake ECP for the GKE PoC: control-node annotations → headless Service + EndpointSlices, ready from a `/health` probe |
+| `gke-poc/` | Real-GKE PoC (working end to end): GCE VMs running vLLM as linked runners, fake ECP, standalone EPP + Envoy; infra script, manifests, verification and results |
 
 ## Run
 

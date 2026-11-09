@@ -1,129 +1,165 @@
-# 在真实 GKE 上验证 EndpointSlice discovery：可行性和计划
+# Exos EPP + Envoy GKE PoC: Topology and Manifests
 
-目标：在真实的 GKE 集群上验证，EPP 用 `endpointslice-discovery` 插件读取“外部地址”的 EndpointSlice，并通过 Envoy 把请求真的转发到集群外的模型服务器。具体做法：
-- 用 GCE VM 代替 Borneo linked runner；
-- 自己写一个小 controller 代替 ECP（下文称 fake-ECP）。
+**Status:** PoC working end to end (2026-11-06); resources kept for inspection
 
-本地 envtest 版本的验证见 [../poc](../poc)，插件见 [pkg/epp/framework/plugins/datalayer/discovery/endpointslice](../../pkg/epp/framework/plugins/datalayer/discovery/endpointslice/README.md)。
+**Owner:** xiyue
 
-> 状态：计划阶段，下面的产物和脚本尚未实现。
+**Code:** plugin in [pkg/epp/framework/plugins/datalayer/discovery/endpointslice](../../pkg/epp/framework/plugins/datalayer/discovery/endpointslice/README.md); envtest PoC in [../poc](../poc); fake-ECP in [../fakeecp](../fakeecp).
 
-## 结论：可行
+## 1. Goal
 
-我们要验证的那几个关键行为，GCE VM 都能复现：
-1. 模型服务器的地址在集群外，不是 Pod IP，NEG 也管不了；
-2. K8s 里的 model pod 用 hostNetwork，`podIP` 是 control node 的 IP；
-3. 由一个 controller 把真实地址写成 selector-less Service 的 EndpointSlice；
-4. EPP 读取这些 slice 来做路由，Envoy 把请求直接转发到外部地址。
+Validate the EndpointSlice custom discovery plugin on a real GKE cluster:
 
-GCE VM 和 GKE 在同一个 VPC 里，Pod 可以直接访问 VM 的内部 IP。这一点对应 Exos 里 GKE Pod 能直连 Borneo IPv6 的情况。
+*   Model servers run outside the cluster on GCE VMs, standing in for Borneo Ti-VM linked runners. Their hostNetwork pods in Kubernetes report the control node IP as podIP, so Pod-based discovery cannot work.
+*   fake-ECP runs in the cluster and publishes each runner's real IP as an EndpointSlice of a selector-less headless Service.
+*   A standalone EPP discovers endpoints with the endpointslice-discovery plugin. A separately deployed Envoy asks the EPP which endpoint to use over ext\_proc, then connects straight to the VM with ORIGINAL\_DST.
+*   Out of scope this round: mTLS, P/D disaggregation, IPv6 addresses (the infrastructure is already dual-stack; addresses are IPv4 for now).
 
-## 架构
+## 2. Topology
 
-```mermaid
-flowchart LR
-  C["client（kubectl run curl）"] --> E["Envoy Deployment<br/>ext_proc + ORIGINAL_DST"]
-  E -. "ext_proc :9002" .-> P["EPP Deployment（cmd/epp，custom-discovery 分支）<br/>endpointslice-discovery"]
-  P -- "watch" --> ES["EndpointSlice<br/>glm52-server-runner-borneo"]
-  P -- "抓 /metrics" --> VM
-  E -- "转发到 VM_IP:9080" --> VM
-  subgraph GKE["GKE Standard 集群（VPC-native）"]
-    C
-    E
-    P
-    ES
-    F["fake-ECP Deployment<br/>读 node annotation → 写 Service/Slice<br/>探测 VM /health → 设置 ready"]
-    N["control node（普通节点）<br/>annotation: linked-runner.runner-instance/*"]
-    H["hostNetwork 占位 pod<br/>（podIP = node IP）"]
-  end
-  subgraph VMs["同一 VPC 里的 GCE VM（代替 linked runner）"]
-    VM["vm-p0 / vm-d0 / vm-d1<br/>llm-d-inference-sim :9080"]
-  end
-  F -- "读 annotation" --> N
-  F -- "写" --> ES
-  F -- "探测 /health" --> VM
-  H -. "放在 control node 上" .-> N
+![PoC topology: inference path 1-3, discovery path a-d](docs/topology.svg)
+
+### 2.1 Mapping to Exos
+
+| Exos production | PoC | Notes |
+| :--- | :--- | :--- |
+| sglang-router Deployment (namespace prediction, with egress-envoy sidecar) | Envoy Deployment + standalone EPP Deployment | The router already runs on regular GKE nodes, so its replacement (Envoy + EPP) does too |
+| sglang on Borneo GB300 Ti-VMs (linked runners) | vLLM in docker on GCE VMs (g2-standard-8 + 1×L4) | Outside the cluster; the L4s are not GKE nodes |
+| Control node (CPU GKE node, criproxy) | The control-pool node, labeled exos-poc/control-node=true by its node pool | Node annotations stand in for the linked-runner controller's output |
+| hostNetwork model pods (podIP = control node IP) | prediction/vllm-runner-0/1 pause pods | Only reproduce the problem; they carry no traffic |
+| linked-runner.runner-instance/... node annotations | linked-runner-annotator, from the linked-runners ConfigMap that infra.sh annotate writes | JSON with NAME / STATUS / IP\_ADDRESS / PROVIDER\_ID |
+| ECP writes EndpointSlices (ready hard-coded to true) | fake-ECP (ready derived from a /health probe) | Service glm52-server; slices named glm52-server-RUNNER-borneo |
+
+### 2.2 Request path
+
+![Request sequence through Envoy, EPP and vLLM](docs/sequence.svg)
+
+### 2.3 Endpoint discovery path
+
+1.  infra.sh annotate writes one entry per VM, carrying the VM's internal IP, into the linked-runners ConfigMap. The linked-runner-annotator keeps a matching linked-runner.runner-instance/RUNNER annotation on the control node, and re-applies it if the node is recreated.
+2.  fake-ECP reconciles every 5s. It reads the annotations, ensures the selector-less headless Service glm52-server exists, and writes one EndpointSlice per runner with STATUS=RUNNING. It probes the VM's :9080/health and writes the result into conditions.ready. When an annotation disappears, it deletes the matching slice.
+3.  The EPP's endpointslice-discovery plugin watches slices matching kubernetes.io/service-name=glm52-server with an informer. It skips ready=false and terminating endpoints, picks the port named http, and upserts each endpoint into the EPP datastore with ID namespace/service.hostname.
+4.  The EPP scrapes vLLM /metrics from each endpoint for scoring.
+
+## 3. Resource inventory (project xiyue-gke-dev-new)
+
+| Resource | Name / value |
+| :--- | :--- |
+| VPC | epp-poc-net (ULA internal IPv6 fd20:b84:290b::/48) |
+| Subnets | epp-poc-subnet (europe-west4, 10.10.0.0/20, cluster + control node); epp-poc-subnet-us-central1 (10.30.0.0/20, current runners); epp-poc-subnet-europe-west1 (10.20.0.0/20, unused); all IPV4\_IPV6 with internal IPv6 |
+| Cloud NAT | epp-poc-router / epp-poc-nat, plus epp-poc-router-us-central1 / epp-poc-nat-us-central1 and the europe-west1 pair (VMs have no external IP; used for image and model pulls) |
+| Firewall | epp-poc-to-runner (tcp:9080 from the pod CIDR and the three subnets); epp-poc-iap-ssh (tcp:22 from IAP) |
+| GKE | epp-poc, zonal europe-west4-a, Standard, dual-stack, Dataplane V2; default-pool 2 × e2-standard-4; control-pool 1 × e2-standard-2 labeled exos-poc/control-node=true (node gke-epp-poc-control-pool-b9a0680f-7k1s, 10.10.0.16); maintenance exclusion epp-poc-freeze (no node upgrades for 60 days) |
+| kubectl context | gke\_xiyue-gke-dev-new\_europe-west4-a\_epp-poc |
+| Runner VMs (in use) | runner-us-central1-0 (10.30.0.10, on-demand) and runner-us-central1-1 (10.30.0.14, spot, restarted when preempted); g2-standard-8 + 1×L4, us-central1-a. L4 was stocked out in europe-west4-a/b/c and europe-west1 (both on-demand and spot), and europe-west6 is blocked by the project's location policy |
+| Runner VMs (stopped, kept) | runner-0 / runner-1 (europe-west4-b), runner-a-0 / runner-a-1 (europe-west4-a) |
+| linked-runner stand-in | ConfigMap linked-runners (one entry per runner, written by infra.sh annotate) + Deployment linked-runner-annotator, which keeps the control node's annotations in sync every 15s |
+| VM image | deeplearning-platform-release / common-cu129-ubuntu-2204-nvidia-580, 200GB disk |
+| Model server | vllm/vllm-openai:latest (v0.33.0), Qwen/Qwen3.5-2B, host :9080 → container :8000 |
+| EPP image | us-west1-docker.pkg.dev/xiyue-gke-dev-new/xiyue-poc/vertex-exos-poc/epp:custom-discovery |
+| fake-ECP image | us-west1-docker.pkg.dev/xiyue-gke-dev-new/xiyue-poc/vertex-exos-poc/fake-ecp:latest |
+| Envoy image | envoyproxy/envoy:v1.36.2 |
+
+## 4. Verification results
+
+verify.sh: 4/4 PASS (2026-11-06 with the europe-west4 runners; again 2026-11-09 with the us-central1 runners).
+
+Results of the 2026-11-06 run (the 2026-11-09 run is the same with control node 10.10.0.16 and runners 10.30.0.10 / 10.30.0.14):
+
+| Check | Result |
+| :--- | :--- |
+| Pod-based view | Control node IP 10.10.0.3; both model pods report podIP 10.10.0.3 (problem reproduced) |
+| fake-ECP slices | glm52-server-runner-a-0-borneo → 10.10.0.10 ready=true; glm52-server-runner-a-1-borneo → 10.10.0.11 ready=true |
+| EPP datastore | slice-discovery: totalEndpoints=2 (default/glm52-server.runner-a-0, default/glm52-server.runner-a-1) |
+| Requests | 20 /v1/chat/completions requests through Envoy, all 200 with real Qwen3.5-2B completions |
+| Distribution | Envoy access log: 33 requests each to upstream 10.10.0.10:9080 and 10.10.0.11:9080 |
+
+Dynamic behavior also observed: after switching the annotations from runner-0/1 to runner-a-0/1, fake-ECP deleted the old slices and created new ones (ready=false at first, flipping to true once vLLM came up). The EPP picked up the new endpoint set without a restart.
+
+### 4.1 Failure and security tests (2026-11-09)
+
+Run with the two runners in us-central1-a. Load came from the in-cluster curl pod; each run was tagged with a query parameter so its Envoy access-log lines could be counted exactly.
+
+**Forged destination header (client sets `x-gateway-destination-endpoint`)**
+
+| Test | Result |
+| :--- | :--- |
+| Forged → nonexistent 10.30.0.99:9080 | 20/20 200, all to the runner the EPP picked |
+| Forged with mixed case and duplicate values | 20/20 200, all to the EPP's pick |
+| Forged → the runner the EPP was *not* picking (10.30.0.10) | 20/20 went to 10.30.0.14, the EPP's pick |
+| EPP unavailable (scaled to 0) | 10/10 500 with no upstream: fails closed, so a forged header cannot be used even then |
+
+The EPP's ext\_proc reply overwrites a client-supplied value. As defense in depth, Envoy now also strips `x-gateway-destination-endpoint` and `x-gateway-destination-endpoint-served` with a `header_mutation` filter placed *before* ext\_proc (route-level `request_headers_to_remove` would run after ext\_proc and delete the EPP's own value). Re-test: 10/10 200 to the EPP's pick.
+
+**Failures and dynamic changes**
+
+| Test | Result |
+| :--- | :--- |
+| EPP scaled to 0, then back to 1 | Down: 10/10 500, nothing bypasses the EPP. Back: endpoints rediscovered from the slices 2s after Ready; 10/10 200 |
+| EPP rolling restart under load (90s, ~3.3 req/s) | 290/293 200. 1×500 when the old pod's ext\_proc stream dropped (fail-closed); 2×503 attributed to the upstream keep-alive race below |
+| fake-ECP scaled to 0 | Existing slices stay; 10/10 200 (readiness just stops updating) |
+| Runner lost under load (real spot preemption of runner-us-central1-1 during a 240s run) | fake-ECP marked the slice `ready=false` at 21:41:25 (GCE logged the preemption at 21:41:31); the EPP dropped the endpoint and all later traffic went to the other runner. 690/692 200: 1 request in flight on the dying VM timed out, 1×503 from the keep-alive race |
+| Runner comes back | Slice flips to `ready=true` when `/health` passes; traffic splits across both runners again |
+| Add a runner via the linked-runners ConfigMap | New slice, EPP endpoints 1 → 2 after 55s; requests 200 |
+| Change a runner's IP to a dead address | Slice address updated, `ready=false`, EPP removed it after 39s |
+| Remove runners from the ConfigMap | Annotations and slices deleted after 69s |
+
+The 39–69s for ConfigMap-driven changes is mostly the kubelet refreshing the mounted ConfigMap (up to ~60s), plus the annotator's 15s loop and fake-ECP's 5s loop. The EPP reacts within a second of a slice change.
+
+**Upstream keep-alive race (found and fixed).** vLLM's server (uvicorn) closes idle keep-alive connections after 5s; Envoy occasionally sent a request on a connection the server was closing, which showed up as a 503 with an upstream host and a very short duration (about 1 in 300–700 requests). Setting `idle_timeout: 4s` on the ORIGINAL\_DST cluster closes them on the Envoy side first. After the fix: 819/819 200 (fast load plus requests spaced 4.5–6s apart to hit the idle window).
+
+## 5. Differences from Exos production and known limitations
+
+*   Address family: slices are IPv4; Exos uses Borneo IPv6. Next step is to point the annotations at the VMs' IPv6 addresses and add an IPv6 firewall rule.
+*   No mTLS: in Exos the router's egress goes through an egress-envoy sidecar for mTLS. Not done this round.
+*   No P/D: single-role vLLM only. P/D needs ECP to write llm-d.ai/role on the slices; otherwise decode-filter accepts endpoints without a role label.
+*   Ready semantics: real ECP hard-codes ready=true; fake-ECP derives it from a /health probe. Production needs either ECP-side probing or EPP-side metrics/health handling.
+*   Metrics: the EPP parses vLLM metric names by default. Exos with SGLang needs core-metrics-extractor defaultEngine: sglang or the llm-d.ai/engine-type label.
+*   Spot runners are preempted often (after 4 minutes to 2 hours in these runs). A preempted runner's slice goes ready=false and traffic moves to the other runner (section 4.1).
+*   Runners are in us-central1 while the cluster is in europe-west4 (L4 stockout), so requests cross regions; this adds latency but does not affect discovery or routing.
+*   GKE auto-upgrade recreated the nodes once and wiped the control node's label and annotations, after which fake-ECP deleted every slice. The PoC now uses a dedicated node pool for the label, an annotator that re-applies annotations, Deployments for the placeholder pods, and a maintenance exclusion. Exos's linked-runner controller should be checked for the same exposure.
+*   The control node runs no criproxy.
+
+## 6. Reproduction
+
+```bash
+cd llm-d-inference-scheduler   # branch capri-xiyue/custom-discovery
+export REG=us-west1-docker.pkg.dev/xiyue-gke-dev-new/xiyue-poc/vertex-exos-poc
+export EPP_IMAGE=$REG/epp:custom-discovery
+export FAKEECP_IMAGE=$REG/fake-ecp:latest
+
+# 1. Images
+docker build -t $EPP_IMAGE -f Dockerfile.epp . && docker push $EPP_IMAGE
+docker build -t $FAKEECP_IMAGE -f exos/fakeecp/Dockerfile . && docker push $FAKEECP_IMAGE
+
+# 2. Infrastructure + runner VMs (use spot / another zone if L4 is stocked out)
+RUNNERS="runner-a-0 runner-a-1" RUNNER_ZONE=europe-west4-a \
+  RUNNER_PROVISIONING=SPOT RUNNER_PROVISIONING_FLAGS="--instance-termination-action=STOP" \
+  bash exos/gke-poc/infra.sh up
+RUNNERS="runner-a-0 runner-a-1" RUNNER_ZONE=europe-west4-a bash exos/gke-poc/infra.sh annotate   # writes ConfigMap linked-runners
+
+# 3. Deploy
+kubectl apply -f exos/gke-poc/manifests/annotator.yaml
+kubectl apply -f exos/gke-poc/manifests/placeholder-pods.yaml
+envsubst < exos/gke-poc/manifests/fakeecp.yaml | kubectl apply -f -
+envsubst < exos/gke-poc/manifests/epp.yaml | kubectl apply -f -
+kubectl apply -f exos/gke-poc/manifests/envoy.yaml
+
+# 4. Verify
+bash exos/gke-poc/verify.sh
 ```
 
-| Exos 组件 | 在这里用什么代替 |
-|---|---|
-| Borneo Ti-VM 上的 linked runner 和 sglang | **GCE VM** 上跑 **llm-d-inference-sim**（CPU 就够，模拟 OpenAI API 和 `/metrics`，不需要 GPU） |
-| linked-runner controller 写 node annotation | **脚本或 fake-ECP** 直接用 `kubectl annotate node`，写同样格式的 `linked-runner.runner-instance/<runner>` JSON（STATUS、IP_ADDRESS、PROVIDER_ID） |
-| control node 上的 hostNetwork model pod | 在一个普通节点上放 **hostNetwork 的 pause pod**，带 `app=glm52`、`llm-d.ai/role`。只用来展示 podIP 的问题，不承担流量 |
-| ECP（node_annotations.go 和 server_main.go） | **fake-ECP**：一个小的 Go controller（`exos/fakeecp`），复用 `simecp` 的逻辑：<br/>- watch node annotation，写 headless Service 和 EndpointSlice；<br/>- **探测 VM 的 `/health`，据此设置 `ready`**（这是真实 ECP 将来需要做的改进）；<br/>- 写入 `llm-d.ai/role` |
-| sglang-router | **EPP**（用 custom-discovery 分支的 `cmd/epp` 构建镜像）加上**独立部署的 Envoy** |
+## 7. Files
 
-## 和真实 Exos 相比：哪些覆盖了，哪些没有
-
-| 项 | 覆盖 | 说明 |
-|---|---|---|
-| 外部地址通过 EndpointSlice 被 EPP 发现 | ✅ | 核心目标 |
-| hostNetwork 导致 podIP 塌缩成一个地址 | ✅ | 占位 pod 可以展示 |
-| EPP 用真实的 informer 和 in-cluster RBAC 读 slice | ✅ | 在 envtest 里没有验证过 |
-| EPP 抓真实的 `/metrics`，用 queue/kv-cache 打分 | ✅ | 需要确认 sim 输出的指标名；如果只有 vLLM 的指标名，就先用默认的 vllm engine |
-| Envoy 用 ORIGINAL_DST 真的转发到外部 IP | ✅ | |
-| readiness 变化（VM 宕机或恢复） | ✅ | 停掉 VM 上的服务，fake-ECP 把 slice 改成 ready=false，EPP 就不再路由过去 |
-| runner 换 IP（模拟重新调度） | ✅ | 换一台 VM，更新 annotation |
-| IPv6 地址（Borneo 是 IPv6） | ⚠️ 第二阶段 | 需要双栈 subnet、双栈 GKE 集群、给 VM 分配 IPv6 |
-| 真实的 linked-runner 机制（criproxy、pod 真的跑在 VM 上） | ❌ | pod 只是占位，模型服务器是直接在 VM 上跑的进程或容器 |
-| mTLS（egress 和 ingress Envoy）、Access Sidecar、Borneo 的 ACL | ❌（可选第四阶段） | 可以在 VM 上起 ingress Envoy，在 Envoy 侧做 mTLS，但这会让工作量变大 |
-| sglang PD（bootstrap 握手、Mooncake 传 KV） | ❌ | sim 不实现 sglang 的 bootstrap 协议，PD 留到之后在 exos-dev 上用真实的 sglang 验证 |
-
-## 分阶段计划和检查点
-
-### 阶段 0：准备
-- GCP 项目（用你自己的 dev 项目，还是 exos-dev-N？）、region/zone，以及创建 GKE、GCE、防火墙、Artifact Registry 的权限。
-- **EPP 镜像**：用 `capri-xiyue/custom-discovery` 分支构建（仓库里有 `Dockerfile.epp` 和 `make image-build`）。在本地构建并推送，或者用 Cloud Build。
-- 公开镜像：`ghcr.io/llm-d/llm-d-inference-sim`（**需要确认**具体的 tag 和参数，比如 `--port`、`--model`，以及 metrics 的格式）和 `envoyproxy/envoy`。
-
-### 阶段 1：基础设施（IPv4）
-1. 创建 GKE **Standard** 集群（VPC-native，1 个节点池，2 个 e2-standard-4）。Autopilot 会限制 hostNetwork 和修改节点，不适合这个测试。
-2. 在同一个 VPC 和 subnet 里创建 3 台 GCE VM（e2-small），用 startup-script 跑 inference-sim，监听 9080。
-3. 防火墙：允许 GKE 的 **Pod CIDR 和节点 CIDR** 访问这些 VM 的 tcp:9080。
-- ✅ 检查点：在集群里起一个临时 pod，`curl http://<VM_IP>:9080/v1/models` 和 `/metrics` 都能通。
-
-### 阶段 2：复刻 Exos 在 K8s 里的对象
-4. 选一个节点作为 control node，给它打上 3 个 `linked-runner.runner-instance/*` annotation（IP_ADDRESS 填各台 VM 的 IP）。
-5. 在这个节点上部署 3 个 hostNetwork 的 pause pod（带 role label）。
-6. 部署 fake-ECP（需要新写约 200 行 Go，加上 Dockerfile 和 RBAC）。
-- ✅ 检查点：
-  - `kubectl get pods -o wide`：3 个 pod 的 IP 都等于节点 IP；
-  - `kubectl get endpointslice -l kubernetes.io/service-name=glm52-server -o yaml`：3 个 slice，地址是 VM 的 IP，带 `llm-d.ai/role`，`ready` 和 VM 健康状态一致。
-
-### 阶段 3：EPP 加 Envoy
-7. 部署 EPP：Deployment、ServiceAccount、Role（允许 get/list/watch endpointslices）、ConfigMap（`endpointslice-discovery`，decode profile 用 queue/kv-cache 打分）。启动参数加 `--allow-experimental-plugins --secure-serving=false`。
-8. 部署 Envoy：用 llm-d standalone 的 Envoy 配置（ext_proc 加 ORIGINAL_DST）。可以参考 llm-d chart 的 `proxy.mode: service`，或者 `docs/discovery.md` 里的示例。
-- ✅ 检查点：
-  - EPP 日志里有 `initial EndpointSlice sync complete endpoints=3`；`/debug/plugins/state` 里有 3 个 endpoint ID；
-  - `curl envoy:8080/v1/chat/completions` 返回 200；sim 的日志能看到请求，响应头里的目标 endpoint 是 decode VM 的 IP；
-  - 停掉 vm-d1 上的 sim：slice 变成 ready=false，之后的请求只会到 vm-d0；
-  - 恢复 vm-d1：它重新加入路由。
-
-### 阶段 4（可选）：贴近 Exos
-- **IPv6**：重建一个双栈集群（`--stack-type=ipv4-ipv6`）和双栈 subnet，VM 用 IPv6，再验证 `[v6]:port` 的格式、Envoy 的转发和抓 metrics。
-- **mTLS**：在 VM 上加一个 ingress Envoy（8506 端口，校验客户端证书），在 GKE 的 Envoy 上加 upstream TLS。可以复用 Exos 的 mtls_ingress 和 mtls_egress 配置。
-- **FQDN 地址**（设计文档里的 V1）：slice 用 hostname，验证 EPP 和 header 的行为。
-
-## 需要实现的产物
-
-| 产物 | 位置 |
-|---|---|
-| fake-ECP controller，加 Dockerfile 和 RBAC | `exos/fakeecp/`（复用 `exos/poc/simecp`） |
-| GKE 和 VM 的创建与清理脚本（gcloud） | `exos/gke-poc/infra.sh` |
-| K8s 清单：占位 pod、fake-ECP、EPP、Envoy | `exos/gke-poc/manifests/` |
-| 验证脚本：检查点用到的 curl 和 kubectl | `exos/gke-poc/verify.sh` |
-
-镜像的构建和推送在本地完成（需要 Docker），或者用 Cloud Build。
-
-## 成本和清理
-
-- 大约是 2 个 e2-standard-4 的 GKE 节点、3 台 e2-small VM，再加 GKE 管理费，**每天几美元**。
-- `infra.sh down` 会删除集群、VM、防火墙规则和镜像。
-
-## 待确认
-
-1. **GCP 项目、region/zone**，以及是否可以在这个项目里创建防火墙规则？
-2. **先用 IPv4**（阶段 1–3），IPv6 放到阶段 4，可以吗？
-3. **EPP 镜像**由你在本地构建推送，还是用 Cloud Build？推送到哪个 Artifact Registry？
-4. 这次是否需要 **mTLS**，还是先只验证 discovery 和转发？
-5. fake-ECP 跑在集群里（Deployment），还是先用一个本地脚本一次性写入 slice？后者更快，但验证不了 readiness 的动态变化。
+| File | Purpose |
+| :--- | :--- |
+| [infra.sh](infra.sh) | VPC, subnet, NAT, firewall, GKE cluster with control-pool, maintenance exclusion, runner VMs; `annotate` writes the linked-runners ConfigMap |
+| [vllm-startup.sh](vllm-startup.sh) | GCE startup script: NVIDIA driver, Docker, vLLM |
+| [verify.sh](verify.sh) | The four checks in section 4 |
+| [manifests/annotator.yaml](manifests/annotator.yaml) | linked-runner controller stand-in: ConfigMap → control-node annotations |
+| [manifests/placeholder-pods.yaml](manifests/placeholder-pods.yaml) | hostNetwork pods on the control node (reproduce podIP = node IP) |
+| [manifests/fakeecp.yaml](manifests/fakeecp.yaml) | fake-ECP Deployment + RBAC |
+| [manifests/epp.yaml](manifests/epp.yaml) | Standalone EPP with the endpointslice-discovery plugin |
+| [manifests/envoy.yaml](manifests/envoy.yaml) | Standalone Envoy: strip client routing headers, ext\_proc to EPP, ORIGINAL\_DST to the picked runner |
+| [docs/](docs) | Diagram sources (SVG) |
+| [../fakeecp](../fakeecp/main.go) | fake-ECP source |

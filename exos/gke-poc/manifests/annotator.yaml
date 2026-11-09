@@ -1,0 +1,88 @@
+# Stand-in for the linked-runner controller: keeps the control node's
+# linked-runner.runner-instance/<runner> annotations in sync with the
+# linked-runners ConfigMap (one key per runner, value = annotation JSON, written
+# by `infra.sh annotate`). Node annotations are lost when GKE recreates a node
+# (auto-upgrade, auto-repair), so they are reconciled continuously instead of
+# being written once.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: linked-runner-annotator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: linked-runner-annotator
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: linked-runner-annotator
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: linked-runner-annotator}
+subjects:
+- {kind: ServiceAccount, name: linked-runner-annotator, namespace: default}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: linked-runner-annotator-script
+  namespace: default
+data:
+  reconcile.sh: |
+    #!/bin/bash
+    # Reconcile linked-runner annotations on every control node every 15s.
+    set -u
+    prefix=linked-runner.runner-instance/
+    while true; do
+      for node in $(kubectl get nodes -l exos-poc/control-node=true -o name); do
+        args=()
+        for f in /etc/linked-runners/*; do
+          [[ -f "$f" ]] || continue
+          args+=("${prefix}$(basename "$f")=$(cat "$f")")
+        done
+        # Drop annotations of runners that are no longer in the ConfigMap.
+        existing=$(kubectl get "$node" -o go-template='{{range $k, $v := .metadata.annotations}}{{$k}}{{"\n"}}{{end}}')
+        while read -r key; do
+          [[ "$key" == "$prefix"* ]] || continue
+          [[ -f "/etc/linked-runners/${key#"$prefix"}" ]] || args+=("${key}-")
+        done <<< "$existing"
+        if (( ${#args[@]} > 0 )); then
+          kubectl annotate "$node" --overwrite "${args[@]}" >/dev/null || echo "annotate $node failed"
+        fi
+      done
+      sleep 15
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linked-runner-annotator
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: linked-runner-annotator}
+  template:
+    metadata:
+      labels: {app: linked-runner-annotator}
+    spec:
+      serviceAccountName: linked-runner-annotator
+      containers:
+      - name: annotator
+        image: alpine/k8s:1.34.1
+        command: ["/bin/bash", "/scripts/reconcile.sh"]
+        volumeMounts:
+        - {name: script, mountPath: /scripts}
+        - {name: runners, mountPath: /etc/linked-runners}
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+      volumes:
+      - name: script
+        configMap: {name: linked-runner-annotator-script}
+      - name: runners
+        configMap: {name: linked-runners, optional: true}

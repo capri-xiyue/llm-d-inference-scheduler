@@ -53,6 +53,18 @@ up() {
       --num-nodes 2 --machine-type e2-standard-4 --release-channel regular
   g container clusters get-credentials "${CLUSTER}" --zone "${ZONE}"
 
+  # Dedicated control node: the label comes from the node pool, so it survives
+  # GKE recreating the node (auto-upgrade, auto-repair).
+  exists g container node-pools describe control-pool --cluster "${CLUSTER}" --zone "${ZONE}" ||
+    g container node-pools create control-pool --cluster "${CLUSTER}" --zone "${ZONE}" \
+      --num-nodes 1 --machine-type e2-standard-2 --node-labels exos-poc/control-node=true
+  # Keep GKE from upgrading (and recreating) nodes in the middle of PoC runs.
+  g container clusters update "${CLUSTER}" --zone "${ZONE}" \
+    --add-maintenance-exclusion-name "${PREFIX}-freeze" \
+    --add-maintenance-exclusion-start "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --add-maintenance-exclusion-end "$(date -u -d '+60 days' +%Y-%m-%dT%H:%M:%SZ)" \
+    --add-maintenance-exclusion-scope no_minor_or_node_upgrades 2>/dev/null || true
+
   local pod_cidr
   pod_cidr="$(g container clusters describe "${CLUSTER}" --zone "${ZONE}" --format='value(clusterIpv4Cidr)')"
   exists g compute firewall-rules describe "${PREFIX}-to-runner" ||
@@ -78,8 +90,10 @@ up() {
 
 runner_ip() { g compute instances describe "$1" --zone "${RUNNER_ZONE}" --format='value(networkInterfaces[0].networkIP)'; }
 
-# annotate plays the linked-runner controller: one
-# linked-runner.runner-instance/<runner> annotation per VM on the control node.
+# annotate records one linked-runner.runner-instance/<runner> entry per VM in
+# the linked-runners ConfigMap; manifests/annotator.yaml (the linked-runner
+# controller stand-in) keeps the control node's annotations in sync with it, so
+# they survive GKE recreating the node.
 annotate() {
   local node
   node="$(kubectl get nodes -l exos-poc/control-node=true -o name | head -1)"
@@ -87,15 +101,15 @@ annotate() {
     node="$(kubectl get nodes -o name | head -1)"
     kubectl label "${node}" exos-poc/control-node=true --overwrite
   fi
-  local i=0
+  local i=0 args=()
   for r in ${RUNNERS}; do
     local ip
     ip="$(runner_ip "${r}")"
-    kubectl annotate "${node}" --overwrite \
-      "linked-runner.runner-instance/${r}={\"NAME\":\"${r}\",\"STATUS\":\"RUNNING\",\"IP_ADDRESS\":\"${ip}\",\"PROVIDER_ID\":\"provider://bns/${ZONE}/borg/${ZONE}/bns/poc/${PREFIX}/${i}\"}"
+    args+=("--from-literal=${r}={\"NAME\":\"${r}\",\"STATUS\":\"RUNNING\",\"IP_ADDRESS\":\"${ip}\",\"PROVIDER_ID\":\"provider://bns/${ZONE}/borg/${ZONE}/bns/poc/${PREFIX}/${i}\"}")
     i=$((i + 1))
   done
-  echo "control node: ${node}"
+  kubectl -n default create configmap linked-runners "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+  echo "control node: ${node}; runners: ${RUNNERS}"
 }
 
 status() {
